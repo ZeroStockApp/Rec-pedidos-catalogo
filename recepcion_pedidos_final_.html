@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Recepción de Pedidos</title>
+  <style>
+    :root{
+      --primary:#136f63; --ink:#111827; --bg:#f7f7f8; --card:#ffffff; --ring:#d1d5db; --muted:#6b7280; --radius:14px;
+    }
+    *{box-sizing:border-box}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,Arial; background:var(--bg); color:var(--ink); margin:0;}
+    .container{max-width:980px; margin:32px auto; padding:0 16px}
+    h1{font-size:clamp(22px,3vw,28px); margin:0 0 6px}
+    .sub{color:#374151; margin:0 0 18px}
+    .card{background:var(--card); border:1px solid var(--ring); border-radius:var(--radius); box-shadow:0 6px 24px rgba(0,0,0,.06)}
+    .form{padding:18px}
+    .row{display:grid; gap:14px; grid-template-columns:repeat(12,1fr)}
+    .col-3{grid-column:span 3}
+    .col-6{grid-column:span 6}
+    .col-12{grid-column:span 12}
+    label{display:block; font-size:13px; color:var(--muted); margin:2px 0 6px}
+    input[type=text], input[type=number], select{width:100%; padding:10px 12px; border:1px solid var(--ring); border-radius:10px; background:#fff; font-size:14px}
+    select, option{background:#fff !important; color:#111827 !important}
+    .actions{display:flex; gap:10px; flex-wrap:wrap; padding:16px; border-top:1px solid var(--ring); background:linear-gradient(#fff,#fbfbfb)}
+    button{appearance:none; border:0; padding:10px 14px; border-radius:12px; cursor:pointer; font-weight:600; font-size:14px}
+    .primary{background:var(--primary); color:#fff}
+    .ghost{background:#1e8f7f; color:#fff;}
+    .ghost:hover{background:#136f63;}
+    .danger{background:#fee2e2; color:#7f1d1d}
+
+    .table-card{
+      margin-top:16px;
+      border-radius:14px;
+      overflow:hidden;
+      border:1px solid #000;
+    }
+
+    table{
+      border-collapse:collapse;
+      width:100%;
+      font-size:14px;
+    }
+
+    th,td{
+      padding:10px;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    table, thead th, tbody td {
+      border:1px solid #000;
+    }
+
+    thead th{
+      background:#136f63;
+      color:#fff;
+      text-align:center;
+    }
+
+    tbody td.num{text-align:center}
+
+    #btnPdf{background:#DB2777;color:#fff}
+    #btnPdf:hover{background:#BE185D}
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.3/dist/jspdf.plugin.autotable.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>Recepción de Pedidos</h1>
+    <p class="sub"><span id="gen"></span> | Recibido por: <b id="recibidoTop">(selecciona abajo)</b></p>
+
+    <section class="card form">
+      <h2 style="margin:0 0 10px; font-size:18px">Nuevo pedido</h2>
+
+      <div class="row">
+        <div class="col-3">
+          <label for="numero">Nº pedido</label>
+          <input id="numero" type="text" placeholder="Ej: P00001" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col-6">
+          <label for="dist">Distribuidora</label>
+          <select id="dist"></select>
+        </div>
+        <div class="col-6">
+          <label for="vend">Vendedora / Consultora</label>
+          <input id="vend" type="text" placeholder="Escribe el nombre completo" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col-6">
+          <label for="rec">Recibido por</label>
+          <select id="rec"></select>
+        </div>
+        <div class="col-3">
+          <label for="paq">Nº de paquetes</label>
+          <input id="paq" type="number" min="1" value="1" />
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="primary" id="btnSave">Guardar pedido</button>
+        <button class="ghost" id="btnPdf">Descargar PDF</button>
+        <button class="danger" id="btnClear">Borrar todo</button>
+      </div>
+    </section>
+
+    <div class="card table-card">
+      <table id="tbl">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Nº<br>pedido</th>
+            <th>Distribuidora</th>
+            <th>Vendedora</th>
+            <th>Nº<br>paq</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const DIST = [
+    "Ana Elizabeth Krause Seron",
+    "Carla Valentina Gallardo Miranda",
+    "Catalina Constanza Avendano Torres",
+    "Claudia Edith Perez Cobo",
+    "Denisse Paulina Castro Almonacid",
+    "Elizabeth Nathalie Torres Pena",
+    "Francheska Gisley Vasquez Perez",
+    "Fredna Odette Cardenas Yanez",
+    "Jeniffer Alejandra Gallardo Palma",
+    "Katherine Naara Sanhueza Cid",
+    "Madeleine Escobar Riquelme",
+    "Maria Jose Urrea Leal",
+    "Mixsi Urania Carrasco Garnica",
+    "Monica Andrea Oliva Quiroga",
+    "Nayareth Yetsenia Sanhueza Valdez",
+    "Rocio Pilar Guerrero Barria",
+    "Patricia Alejandra Marcos Villalobos",
+    "Solange Stefani Soto Huala",
+    "Valentina Beatriz Cancino Maldonado",
+    "Viviana Erika Soto Oliva",
+    "Yanira Constanza Espinoza Benavines"
+  ];
+
+  const REC = [
+    "Harumi Araujo",
+    "Mireya Venegas",
+    "Irvin Bandez",
+    "Claudia Cuero",
+    "Maria Alvarez",
+    "Juan Fernandez"
+  ];
+
+  const els={gen:document.getElementById('gen'),recibidoTop:document.getElementById('recibidoTop'),numero:document.getElementById('numero'),dist:document.getElementById('dist'),vend:document.getElementById('vend'),rec:document.getElementById('rec'),paq:document.getElementById('paq'),btnSave:document.getElementById('btnSave'),btnPdf:document.getElementById('btnPdf'),btnClear:document.getElementById('btnClear'),tbody:document.querySelector('#tbl tbody')};
+  const KEY='recepcion_pedidos_v14';
+  let rows=[];
+
+  function init(){
+    localStorage.removeItem(KEY);
+    rows=[];
+
+    els.gen.textContent=`Generado: ${new Date().toLocaleString('es-CL')}`;
+    loadSelect(els.dist,DIST);
+    loadSelect(els.rec,REC);
+    const ultimo=sessionStorage.getItem('ultimo_recibido_por');
+    if(ultimo){els.rec.value=ultimo;els.recibidoTop.textContent=ultimo;}
+  }
+
+  function loadSelect(sel,list){sel.innerHTML='<option value="" disabled selected>Selecciona…</option>'+list.map(x=>`<option>${x}</option>`).join('');}
+
+  function shortDist(full){const p=full.trim().split(/\s+/);if(p.length>=4)return`${p[0]} ${p[2]}`;if(p.length===3)return`${p[0]} ${p[1]}`;if(p.length===2)return`${p[0]} ${p[1]}`;return full;}
+
+  function save(){if(!els.numero.value||!els.dist.value||!els.vend.value||!els.rec.value||!els.paq.value){alert('Completa todos los campos');return;}rows.push({n:els.numero.value.trim(),d:els.dist.value,v:els.vend.value.trim(),q:Number(els.paq.value)});els.recibidoTop.textContent=els.rec.value;sessionStorage.setItem('ultimo_recibido_por',els.rec.value);els.numero.value='';els.vend.value='';els.paq.value=1;els.dist.selectedIndex=0;paint();}
+
+  function paint(){els.tbody.innerHTML=rows.map((r,i)=>`<tr><td class="num">${i+1}</td><td>${r.n}</td><td>${shortDist(r.d)}</td><td>${r.v}</td><td class="num">${r.q}</td></tr>`).join('');}
+
+  function toPDF(){if(rows.length===0){alert('No hay registros');return;}const{jsPDF}=window.jspdf;const doc=new jsPDF({orientation:'landscape'});doc.setFontSize(14);doc.text('Recepción de Pedidos',14,14);doc.setFontSize(10);doc.text(`Generado: ${new Date().toLocaleString('es-CL')} | Recibido por: ${els.recibidoTop.textContent}`,14,20);const head=[[ '#','Nº\npedido','Distribuidora','Vendedora','Nº\npaq','Firma distribuidora','Entregado por','Fecha\nentrega','R' ]];const body=rows.map((r,i)=>[i+1,r.n,shortDist(r.d),r.v,r.q,'','','','']);doc.autoTable({head,body,startY:26,theme:'grid',styles:{fontSize:9,cellPadding:3,lineColor:[0,0,0],lineWidth:0.2,halign:'center',valign:'middle'},headStyles:{fillColor:[19,111,99],textColor:255,halign:'center'},columnStyles:{0:{cellWidth:10},1:{cellWidth:22},2:{cellWidth:44},3:{cellWidth:68},4:{cellWidth:14},8:{cellWidth:10}},didDrawCell:function(data){if(data.section==='body'&&data.column.index===8){const size=5;const x=data.cell.x+(data.cell.width-size)/2;const y=data.cell.y+(data.cell.height-size)/2;doc.setLineWidth(0.4);doc.rect(x,y,size,size);}}});doc.save('recepcion_pedidos.pdf');}
+
+  function clearAll(){if(confirm('¿Eliminar todos los registros?')){rows=[];paint();els.numero.value='';els.vend.value='';els.paq.value=1;els.dist.selectedIndex=0;}}
+
+  document.querySelectorAll('input, select').forEach(el=>{
+    el.addEventListener('keypress',function(e){
+      if(e.key==="Enter"){
+        e.preventDefault();
+        document.getElementById('btnSave').click();
+      }
+    });
+  });
+
+  els.btnSave.onclick=save;els.btnPdf.onclick=toPDF;els.btnClear.onclick=clearAll;els.rec.onchange=()=>{els.recibidoTop.textContent=els.rec.value;sessionStorage.setItem('ultimo_recibido_por',els.rec.value);};init();
+})();
+</script>
+</body>
+</html>
