@@ -198,7 +198,23 @@
   });
 
   els.btnSave.onclick=save;els.btnPdf.onclick=toPDF;els.btnClear.onclick=clearAll;els.rec.onchange=()=>{els.recibidoTop.textContent=els.rec.value;sessionStorage.setItem('ultimo_recibido_por',els.rec.value);};init();
+ 
+  // --- Limpiar datos al cargar la página ---
+window.addEventListener("load", () => {
+  localStorage.removeItem('recepcion_pedidos_v14');
+  sessionStorage.removeItem('ultimo_recibido_por');  // también limpiamos quién recibió
+  document.getElementById('rec').selectedIndex = 0;
+  document.getElementById('numero').value = "";
+  document.getElementById('vend').value = "";
+  document.getElementById('dist').selectedIndex = 0;
+  document.getElementById('paq').value = 1;
+  document.getElementById('recibidoTop').textContent = "(selecciona abajo)";
+  document.getElementById('gen').textContent =
+    `Generado: ${new Date().toLocaleString('es-CL')}`;
+});
 })();
+ 
+
 </script>
 </body>
 </html>
