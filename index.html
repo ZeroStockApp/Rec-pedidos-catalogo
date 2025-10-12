@@ -30,39 +30,44 @@
     .ghost:hover{background:#136f63;}
     .danger{background:#fee2e2; color:#7f1d1d}
 
-    .table-card{
-      margin-top:16px;
-      border-radius:14px;
-      overflow:hidden;
-      border:1px solid #000;
-    }
-
-    table{
-      border-collapse:collapse;
-      width:100%;
-      font-size:14px;
-    }
-
-    th,td{
-      padding:10px;
-      overflow:hidden;
-      text-overflow:ellipsis;
-    }
-
-    table, thead th, tbody td {
-      border:1px solid #000;
-    }
-
-    thead th{
-      background:#136f63;
-      color:#fff;
-      text-align:center;
-    }
-
+    .table-card{margin-top:16px; border-radius:14px; overflow:hidden; border:1px solid #000;}
+    table{border-collapse:collapse; width:100%; font-size:14px;}
+    th,td{padding:6px 8px; overflow:hidden; text-overflow:ellipsis;}
+    table, thead th, tbody td {border:1px solid #000;}
+    thead th{background:#136f63; color:#fff; text-align:center;}
     tbody td.num{text-align:center}
 
     #btnPdf{background:#DB2777;color:#fff}
     #btnPdf:hover{background:#BE185D}
+
+    .btn-edit{background:#e0f2fe; color:#0369a1; border-radius:6px; padding:4px 8px; margin:0 3px}
+    .btn-del{background:#fee2e2; color:#b91c1c; border-radius:6px; padding:4px 8px; margin:0 3px}
+    td.actions-cell{display:flex; justify-content:center; align-items:center;}
+    td.actions-cell button{flex:1; text-align:center;}
+    th:last-child, td.actions-cell{width:150px;}
+
+    /* 🎯 Ajuste final de la tabla en pantalla */
+    #tbl tbody tr { height: auto !important; }
+    #tbl tbody td {
+      padding: 2px 6px !important;
+      line-height: 1.1 !important;
+    }
+    #tbl tbody td.actions-cell { padding-top: 0 !important; padding-bottom: 0 !important; }
+    #tbl tbody td.actions-cell .btn-edit,
+    #tbl tbody td.actions-cell .btn-del { padding: 2px 6px !important; font-size: 12px !important; }
+
+    /* 🌸 Filas alternadas tipo Excel (pantalla) */
+    #tbl tbody tr:nth-child(odd) { background-color: #f3f9f7 !important; }
+    #tbl tbody tr:nth-child(even) { background-color: #ffffff !important; }
+
+    /* Zebra en pantalla */
+    .table-card table tbody tr:nth-child(odd) {
+    background-color: #f3f9f7;
+    }
+   .table-card table tbody tr:nth-child(even) {
+    background-color: #ffffff;
+    }
+
   </style>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.3/dist/jspdf.plugin.autotable.min.js"></script>
@@ -74,14 +79,12 @@
 
     <section class="card form">
       <h2 style="margin:0 0 10px; font-size:18px">Nuevo pedido</h2>
-
       <div class="row">
         <div class="col-3">
           <label for="numero">Nº pedido</label>
           <input id="numero" type="text" placeholder="Ej: P00001" />
         </div>
       </div>
-
       <div class="row">
         <div class="col-6">
           <label for="dist">Distribuidora</label>
@@ -92,7 +95,6 @@
           <input id="vend" type="text" placeholder="Escribe el nombre completo" />
         </div>
       </div>
-
       <div class="row">
         <div class="col-6">
           <label for="rec">Recibido por</label>
@@ -103,7 +105,6 @@
           <input id="paq" type="number" min="1" value="1" />
         </div>
       </div>
-
       <div class="actions">
         <button class="primary" id="btnSave">Guardar pedido</button>
         <button class="ghost" id="btnPdf">Descargar PDF</button>
@@ -120,6 +121,7 @@
             <th>Distribuidora</th>
             <th>Vendedora</th>
             <th>Nº<br>paq</th>
+            <th>Acciones</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -129,93 +131,101 @@
 
 <script>
 (function(){
-  const DIST = [
-    "Ana Elizabeth Krause Seron",
-    "Carla Valentina Gallardo Miranda",
-    "Catalina Constanza Avendano Torres",
-    "Claudia Edith Perez Cobo",
-    "Denisse Paulina Castro Almonacid",
-    "Elizabeth Nathalie Torres Pena",
-    "Francheska Gisley Vasquez Perez",
-    "Fredna Odette Cardenas Yanez",
-    "Jeniffer Alejandra Gallardo Palma",
-    "Katherine Naara Sanhueza Cid",
-    "Madeleine Escobar Riquelme",
-    "Maria Jose Urrea Leal",
-    "Mixsi Urania Carrasco Garnica",
-    "Monica Andrea Oliva Quiroga",
-    "Nayareth Yetsenia Sanhueza Valdez",
-    "Rocio Pilar Guerrero Barria",
-    "Patricia Alejandra Marcos Villalobos",
-    "Solange Stefani Soto Huala",
-    "Valentina Beatriz Cancino Maldonado",
-    "Viviana Erika Soto Oliva",
-    "Yanira Constanza Espinoza Benavines"
-  ];
+// Lista de distribuidoras
+  const DIST=[
+  "Ana Elizabeth Krause Seron",
+  "Carla Valentina Gallardo Miranda",
+  "Claudia Edith Perez Cobo",
+  "Denisse Paulina Castro Almonacid",
+  "Elizabeth Nathalie Torrez Pena",
+  "Francheska Gisley Vasquez Perez",
+  "Fredna Odette Cardenas Yanez",
+  "Jeniffer Alejandra Gallardo Palma",
+  "Katherine Naara Sanhueza Cid",
+  "Madeleine Escobar Riquelme",
+  "Maria Jose Urrea Leal",
+  "Mixsi Urania Carrasco Garnica",
+  "Monica Andrea Oliva Quiroga",
+  "Nayareth Yetsennia Sanhueza Valdez",
+  "Rocio Pilar Guerrero Barria",
+  "Patricia Alejandra Marcos Villalobos",
+  "Solange Stefani Soto Huala",
+  "Valentina Beatriz Cancino Maldonado",
+  "Viviana Erika Soto Oliva",
+  "Yanira Constanza Espinoza Benavides"
+];
 
-  const REC = [
-    "Harumi Araujo",
-    "Mireya Venegas",
-    "Irvin Bandez",
-    "Claudia Cuero",
-    "Maria Alvarez",
-    "Juan Fernandez"
-  ];
+  // Lista de receptores
+  const REC=[
+  "Harumi Araujo",
+  "Mireya Venegas",
+  "Irvin Bandez",
+  "Claudia Cuero",
+  "Maria Alvarez",
+  "Juan Fernandez"
+];
 
   const els={gen:document.getElementById('gen'),recibidoTop:document.getElementById('recibidoTop'),numero:document.getElementById('numero'),dist:document.getElementById('dist'),vend:document.getElementById('vend'),rec:document.getElementById('rec'),paq:document.getElementById('paq'),btnSave:document.getElementById('btnSave'),btnPdf:document.getElementById('btnPdf'),btnClear:document.getElementById('btnClear'),tbody:document.querySelector('#tbl tbody')};
-  const KEY='recepcion_pedidos_v14';
-  let rows=[];
+  let rows=[]; let editIndex=-1;
 
   function init(){
-    localStorage.removeItem(KEY);
-    rows=[];
-
     els.gen.textContent=`Generado: ${new Date().toLocaleString('es-CL')}`;
     loadSelect(els.dist,DIST);
     loadSelect(els.rec,REC);
-    const ultimo=sessionStorage.getItem('ultimo_recibido_por');
-    if(ultimo){els.rec.value=ultimo;els.recibidoTop.textContent=ultimo;}
   }
 
   function loadSelect(sel,list){sel.innerHTML='<option value="" disabled selected>Selecciona…</option>'+list.map(x=>`<option>${x}</option>`).join('');}
-
   function shortDist(full){const p=full.trim().split(/\s+/);if(p.length>=4)return`${p[0]} ${p[2]}`;if(p.length===3)return`${p[0]} ${p[1]}`;if(p.length===2)return`${p[0]} ${p[1]}`;return full;}
 
-  function save(){if(!els.numero.value||!els.dist.value||!els.vend.value||!els.rec.value||!els.paq.value){alert('Completa todos los campos');return;}rows.push({n:els.numero.value.trim(),d:els.dist.value,v:els.vend.value.trim(),q:Number(els.paq.value)});els.recibidoTop.textContent=els.rec.value;sessionStorage.setItem('ultimo_recibido_por',els.rec.value);els.numero.value='';els.vend.value='';els.paq.value=1;els.dist.selectedIndex=0;paint();}
+  function save(){
+    if(!els.numero.value||!els.dist.value||!els.vend.value||!els.rec.value||!els.paq.value){alert('Completa todos los campos');return;}
+    const data={n:els.numero.value.trim(),d:els.dist.value,v:els.vend.value.trim(),q:Number(els.paq.value)};
+    if(editIndex>-1){rows[editIndex]=data; editIndex=-1;} else {rows.push(data);}
+    els.recibidoTop.textContent=els.rec.value;
+    els.numero.value=''; els.vend.value=''; els.paq.value=1; els.dist.selectedIndex=0;
+    paint();
+    els.numero.focus(); // vuelve a enfocar Nº pedido
+  }
 
-  function paint(){els.tbody.innerHTML=rows.map((r,i)=>`<tr><td class="num">${i+1}</td><td>${r.n}</td><td>${shortDist(r.d)}</td><td>${r.v}</td><td class="num">${r.q}</td></tr>`).join('');}
+  function paint(){
+    els.tbody.innerHTML=rows.map((r,i)=>`<tr>
+      <td class="num">${i+1}</td>
+      <td>${r.n}</td>
+      <td>${shortDist(r.d)}</td>
+      <td>${r.v}</td>
+      <td class="num">${r.q}</td>
+      <td class="actions-cell">
+        <button class="btn-edit" onclick="editRow(${i})">✏️ Editar</button>
+        <button class="btn-del" onclick="delRow(${i})">🗑️ Eliminar</button>
+      </td>
+    </tr>`).join('');
+  }
 
-  function toPDF(){if(rows.length===0){alert('No hay registros');return;}const{jsPDF}=window.jspdf;const doc=new jsPDF({orientation:'landscape'});doc.setFontSize(14);doc.text('Recepción de Pedidos',14,14);doc.setFontSize(10);doc.text(`Generado: ${new Date().toLocaleString('es-CL')} | Recibido por: ${els.recibidoTop.textContent}`,14,20);const head=[[ '#','Nº\npedido','Distribuidora','Vendedora','Nº\npaq','Firma distribuidora','Entregado por','Fecha\nentrega','R' ]];const body=rows.map((r,i)=>[i+1,r.n,shortDist(r.d),r.v,r.q,'','','','']);doc.autoTable({head,body,startY:26,theme:'grid',styles:{fontSize:9,cellPadding:3,lineColor:[0,0,0],lineWidth:0.2,halign:'center',valign:'middle'},headStyles:{fillColor:[19,111,99],textColor:255,halign:'center'},columnStyles:{0:{cellWidth:10},1:{cellWidth:22},2:{cellWidth:44},3:{cellWidth:68},4:{cellWidth:14},8:{cellWidth:10}},didDrawCell:function(data){if(data.section==='body'&&data.column.index===8){const size=5;const x=data.cell.x+(data.cell.width-size)/2;const y=data.cell.y+(data.cell.height-size)/2;doc.setLineWidth(0.4);doc.rect(x,y,size,size);}}});doc.save('recepcion_pedidos.pdf');}
+  window.editRow=function(i){const r=rows[i]; els.numero.value=r.n; els.dist.value=r.d; els.vend.value=r.v; els.paq.value=r.q; editIndex=i;}
+  window.delRow=function(i){if(confirm('¿Eliminar este pedido?')){rows.splice(i,1); paint();}}
 
-  function clearAll(){if(confirm('¿Eliminar todos los registros?')){rows=[];paint();els.numero.value='';els.vend.value='';els.paq.value=1;els.dist.selectedIndex=0;}}
+  function toPDF(){
+    if(rows.length===0){alert('No hay registros');return;}
+    const{jsPDF}=window.jspdf; const doc=new jsPDF({orientation:'landscape'});
+    doc.setFontSize(14); doc.text('Recepción de Pedidos',14,14);
+    doc.setFontSize(10); doc.text(`Generado: ${new Date().toLocaleString('es-CL')} | Recibido por: ${els.recibidoTop.textContent}`,14,20);
+    const head=[[ '#','Nº\npedido','Distribuidora','Vendedora','Nº\npaq','Firma distribuidora','Entregado por','Fecha\nentrega','R' ]];
+    const body=rows.map((r,i)=>[i+1,r.n,shortDist(r.d),r.v,r.q,'','','','']);
+    doc.autoTable({head,body,startY:26,theme:'grid',styles:{fontSize:9,cellPadding:3,lineColor:[0,0,0],lineWidth:0.2,halign:'center',valign:'middle'},headStyles:{fillColor:[19,111,99],textColor:255,halign:'center'},alternateRowStyles:{fillColor:[243,249,247]},columnStyles:{0:{cellWidth:10},1:{cellWidth:22},2:{cellWidth:44},3:{cellWidth:68},4:{cellWidth:14},8:{cellWidth:10}},didDrawCell:function(data){if(data.section==='body'&&data.column.index===8){const size=5;const x=data.cell.x+(data.cell.width-size)/2;const y=data.cell.y+(data.cell.height-size)/2;doc.setLineWidth(0.4);doc.rect(x,y,size,size);}}});
+    doc.save('recepcion_pedidos.pdf');
+  }
 
-  document.querySelectorAll('input, select').forEach(el=>{
-    el.addEventListener('keypress',function(e){
-      if(e.key==="Enter"){
-        e.preventDefault();
-        document.getElementById('btnSave').click();
-      }
-    });
-  });
+  els.btnSave.onclick=save; els.btnClear.onclick=()=>{if(confirm('¿Eliminar todo?')){rows=[];paint();}}; els.btnPdf.onclick=toPDF;
 
-  els.btnSave.onclick=save;els.btnPdf.onclick=toPDF;els.btnClear.onclick=clearAll;els.rec.onchange=()=>{els.recibidoTop.textContent=els.rec.value;sessionStorage.setItem('ultimo_recibido_por',els.rec.value);};init();
- 
-  // --- Limpiar datos al cargar la página ---
-window.addEventListener("load", () => {
-  localStorage.removeItem('recepcion_pedidos_v14');
-  sessionStorage.removeItem('ultimo_recibido_por');  // también limpiamos quién recibió
-  document.getElementById('rec').selectedIndex = 0;
-  document.getElementById('numero').value = "";
-  document.getElementById('vend').value = "";
-  document.getElementById('dist').selectedIndex = 0;
-  document.getElementById('paq').value = 1;
-  document.getElementById('recibidoTop').textContent = "(selecciona abajo)";
-  document.getElementById('gen').textContent =
-    `Generado: ${new Date().toLocaleString('es-CL')}`;
-});
+  // Enter navegación entre campos
+  els.numero.addEventListener('keypress',function(e){if(e.key==='Enter'){e.preventDefault();els.dist.focus();}});
+  els.dist.addEventListener('keypress',function(e){if(e.key==='Enter'){e.preventDefault();els.vend.focus();}});
+  els.vend.addEventListener('keypress',function(e){if(e.key==='Enter'){e.preventDefault();els.rec.focus();}});
+  els.rec.addEventListener('keypress',function(e){if(e.key==='Enter'){e.preventDefault();els.paq.focus();}});
+  els.paq.addEventListener('keypress',function(e){if(e.key==='Enter'){e.preventDefault();els.btnSave.focus();}});
+
+  init();
 })();
- 
-
 </script>
 </body>
 </html>
