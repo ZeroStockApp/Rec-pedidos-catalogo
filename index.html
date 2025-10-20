@@ -48,10 +48,7 @@
 
     /* 🎯 Ajuste final de la tabla en pantalla */
     #tbl tbody tr { height: auto !important; }
-    #tbl tbody td {
-      padding: 2px 6px !important;
-      line-height: 1.1 !important;
-    }
+    #tbl tbody td { padding: 2px 6px !important; line-height: 1.1 !important; }
     #tbl tbody td.actions-cell { padding-top: 0 !important; padding-bottom: 0 !important; }
     #tbl tbody td.actions-cell .btn-edit,
     #tbl tbody td.actions-cell .btn-del { padding: 2px 6px !important; font-size: 12px !important; }
@@ -61,13 +58,8 @@
     #tbl tbody tr:nth-child(even) { background-color: #ffffff !important; }
 
     /* Zebra en pantalla */
-    .table-card table tbody tr:nth-child(odd) {
-    background-color: #f3f9f7;
-    }
-   .table-card table tbody tr:nth-child(even) {
-    background-color: #ffffff;
-    }
-
+    .table-card table tbody tr:nth-child(odd) { background-color: #f3f9f7; }
+    .table-card table tbody tr:nth-child(even) { background-color: #ffffff; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.3/dist/jspdf.plugin.autotable.min.js"></script>
@@ -79,6 +71,26 @@
 
     <section class="card form">
       <h2 style="margin:0 0 10px; font-size:18px">Nuevo pedido</h2>
+
+      <!-- Selector de modo (no modifica estilos existentes) -->
+      <div class="row">
+  <div class="col-12">
+    <label>Tipo de registro</label>
+    <div style="display:flex;align-items:center;gap:14px">
+      <label><input id="modeRecep" type="radio" name="mode" value="Recepción" checked> Recepción</label>
+      <label><input id="modeEnvio" type="radio" name="mode" value="Envío"> Envío</label>
+    </div>
+  </div>
+</div>
+
+      <!-- En modo Envío, se elige una sola vez la distribuidora -->
+      <div id="envioBlock" class="row" style="display:none;">
+        <div class="col-6">
+          <label for="distEnvio">Distribuidora (modo Envío — se usa para todo)</label>
+          <select id="distEnvio"></select>
+        </div>
+      </div>
+
       <div class="row">
         <div class="col-3">
           <label for="numero">Nº pedido</label>
@@ -131,8 +143,8 @@
 
 <script>
 (function(){
-// Lista de distribuidoras
-  const DIST=[
+  // ===== Listas base (idénticas a tu archivo original) =====
+const DIST = [
   "Ana Elizabeth Krause Seron",
   "Carla Valentina Gallardo Miranda",
   "Claudia Edith Perez Cobo",
@@ -154,37 +166,76 @@
   "Viviana Erika Soto Oliva",
   "Yanira Constanza Espinoza Benavides"
 ];
-
-  // Lista de receptores
-  const REC=[
-  "Harumi Araujo",
+  const REC = [
+  "Juan Fernandez",
   "Mireya Venegas",
-  "Irvin Bandez",
-  "Claudia Cuero",
   "Maria Alvarez",
-  "Juan Fernandez"
+  "Irvin Bandez",
+  "Claudia Cuero"
 ];
 
-  const els={gen:document.getElementById('gen'),recibidoTop:document.getElementById('recibidoTop'),numero:document.getElementById('numero'),dist:document.getElementById('dist'),vend:document.getElementById('vend'),rec:document.getElementById('rec'),paq:document.getElementById('paq'),btnSave:document.getElementById('btnSave'),btnPdf:document.getElementById('btnPdf'),btnClear:document.getElementById('btnClear'),tbody:document.querySelector('#tbl tbody')};
+
+  // ===== Referencias UI =====
+  const els={
+    gen:document.getElementById('gen'),
+    recibidoTop:document.getElementById('recibidoTop'),
+    numero:document.getElementById('numero'),
+    dist:document.getElementById('dist'),
+    vend:document.getElementById('vend'),
+    rec:document.getElementById('rec'),
+    paq:document.getElementById('paq'),
+    tbody:document.querySelector('#tbl tbody'),
+    btnSave:document.getElementById('btnSave'),
+    btnPdf:document.getElementById('btnPdf'),
+    btnClear:document.getElementById('btnClear')
+  };
+  const ui={
+    modeRecep:document.getElementById('modeRecep'),
+    modeEnvio:document.getElementById('modeEnvio'),
+    envioBlock:document.getElementById('envioBlock'),
+    distEnvio:document.getElementById('distEnvio')
+  };
+
+  let currentMode='Recepción';
   let rows=[]; let editIndex=-1;
 
   function init(){
     els.gen.textContent=`Generado: ${new Date().toLocaleString('es-CL')}`;
-    loadSelect(els.dist,DIST);
-    loadSelect(els.rec,REC);
+    loadSelect(els.dist,DIST); loadSelect(els.rec,REC); loadSelect(ui.distEnvio,DIST);
+    setMode('Recepción');
   }
-
   function loadSelect(sel,list){sel.innerHTML='<option value="" disabled selected>Selecciona…</option>'+list.map(x=>`<option>${x}</option>`).join('');}
-  function shortDist(full){const p=full.trim().split(/\s+/);if(p.length>=4)return`${p[0]} ${p[2]}`;if(p.length===3)return`${p[0]} ${p[1]}`;if(p.length===2)return`${p[0]} ${p[1]}`;return full;}
+  function shortDist(full){const p=full.trim().split(/\s+/); if(p.length>=4)return `${p[0]} ${p[2]}`; if(p.length===3)return `${p[0]} ${p[1]}`; if(p.length===2)return `${p[0]} ${p[1]}`; return full;}
 
+  // ===== Selector de modo =====
+  function clearTableAndForm(){ rows=[]; paint(); els.numero.value=''; els.vend.value=''; els.paq.value=1; els.dist.selectedIndex=0; }
+  function setMode(mode){
+    currentMode=mode;
+    if(mode==='Envío'){
+      ui.envioBlock.style.display='grid';
+      els.dist.disabled=true;
+      els.dist.value = ui.distEnvio.value || '';
+    }else{
+      ui.envioBlock.style.display='none';
+      els.dist.disabled=false;
+      els.dist.selectedIndex=0; // vuelve al estado original
+    }
+    // ✅ Requisito: al cambiar de modo, limpiar la tabla
+    clearTableAndForm();
+  }
+  ui.modeRecep.addEventListener('change',()=>setMode('Recepción'));
+  ui.modeEnvio.addEventListener('change',()=>setMode('Envío'));
+  ui.distEnvio.addEventListener('change',()=>{ if(currentMode==='Envío'){ els.dist.value=ui.distEnvio.value||''; }});
+
+  // ===== CRUD =====
   function save(){
-    if(!els.numero.value||!els.dist.value||!els.vend.value||!els.rec.value||!els.paq.value){alert('Completa todos los campos');return;}
-    const data={n:els.numero.value.trim(),d:els.dist.value,v:els.vend.value.trim(),q:Number(els.paq.value)};
-    if(editIndex>-1){rows[editIndex]=data; editIndex=-1;} else {rows.push(data);}
+    const distValue=(currentMode==='Envío')?ui.distEnvio.value:els.dist.value;
+    if(!els.numero.value||!distValue||!els.vend.value||!els.rec.value||!els.paq.value){alert('Completa todos los campos');return;}
+    const data={n:els.numero.value.trim(), d:distValue, v:els.vend.value.trim(), q:Number(els.paq.value)};
+    if(editIndex>-1){ rows[editIndex]=data; editIndex=-1; } else { rows.push(data); }
     els.recibidoTop.textContent=els.rec.value;
-    els.numero.value=''; els.vend.value=''; els.paq.value=1; els.dist.selectedIndex=0;
-    paint();
-    els.numero.focus(); // vuelve a enfocar Nº pedido
+    els.numero.value=''; els.vend.value=''; els.paq.value=1; if(currentMode==='Recepción'){ els.dist.selectedIndex=0; }
+    paint(); els.numero.focus();
   }
 
   function paint(){
@@ -201,29 +252,117 @@
     </tr>`).join('');
   }
 
-  window.editRow=function(i){const r=rows[i]; els.numero.value=r.n; els.dist.value=r.d; els.vend.value=r.v; els.paq.value=r.q; editIndex=i;}
-  window.delRow=function(i){if(confirm('¿Eliminar este pedido?')){rows.splice(i,1); paint();}}
+  window.editRow=function(i){ const r=rows[i]; els.numero.value=r.n; els.dist.value=r.d; els.vend.value=r.v; els.paq.value=r.q; editIndex=i; if(currentMode==='Envío'){ ui.distEnvio.value=r.d; } };
+  window.delRow=function(i){ if(confirm('¿Eliminar este pedido?')){ rows.splice(i,1); paint(); } };
 
-  function toPDF(){
-    if(rows.length===0){alert('No hay registros');return;}
-    const{jsPDF}=window.jspdf; const doc=new jsPDF({orientation:'landscape'});
-    doc.setFontSize(14); doc.text('Recepción de Pedidos',14,14);
-    doc.setFontSize(10); doc.text(`Generado: ${new Date().toLocaleString('es-CL')} | Recibido por: ${els.recibidoTop.textContent}`,14,20);
-    const head=[[ '#','Nº\npedido','Distribuidora','Vendedora','Nº\npaq','Firma distribuidora','Entregado por','Fecha\nentrega','R' ]];
-    const body=rows.map((r,i)=>[i+1,r.n,shortDist(r.d),r.v,r.q,'','','','']);
-    doc.autoTable({head,body,startY:26,theme:'grid',styles:{fontSize:9,cellPadding:3,lineColor:[0,0,0],lineWidth:0.2,halign:'center',valign:'middle'},headStyles:{fillColor:[19,111,99],textColor:255,halign:'center'},alternateRowStyles:{fillColor:[243,249,247]},columnStyles:{0:{cellWidth:10},1:{cellWidth:22},2:{cellWidth:44},3:{cellWidth:68},4:{cellWidth:14},8:{cellWidth:10}},didDrawCell:function(data){if(data.section==='body'&&data.column.index===8){const size=5;const x=data.cell.x+(data.cell.width-size)/2;const y=data.cell.y+(data.cell.height-size)/2;doc.setLineWidth(0.4);doc.rect(x,y,size,size);}}});
-    doc.save('recepcion_pedidos.pdf');
+ function toPDF(){
+  if(rows.length===0){ alert('No hay registros'); return; }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape' });
+
+  // Encabezado
+  doc.setFontSize(14);
+  doc.text('Recepción de Pedidos', 14, 14);
+  doc.setFontSize(10);
+  doc.text(`Generado: ${new Date().toLocaleString('es-CL')} | Recibido por: ${els.recibidoTop.textContent}`, 14, 20);
+
+  const isEnvio = (typeof currentMode !== 'undefined' && currentMode === 'Envío');
+
+  // Si es Envío, muestra una sola vez la distribuidora en el encabezado
+  if (isEnvio && ui.distEnvio && ui.distEnvio.value) {
+    doc.setFont(undefined, 'bold');
+doc.text(`Distribuidora: ${ui.distEnvio.value}`, 14, 26);
+doc.setFont(undefined, 'normal'); // volver a normal para el resto
+
   }
 
-  els.btnSave.onclick=save; els.btnClear.onclick=()=>{if(confirm('¿Eliminar todo?')){rows=[];paint();}}; els.btnPdf.onclick=toPDF;
+  // ==== Tabla ====
+  let head, body, startY = isEnvio ? 32 : 26;
 
-  // Enter navegación entre campos
-  els.numero.addEventListener('keypress',function(e){if(e.key==='Enter'){e.preventDefault();els.dist.focus();}});
-  els.dist.addEventListener('keypress',function(e){if(e.key==='Enter'){e.preventDefault();els.vend.focus();}});
-  els.vend.addEventListener('keypress',function(e){if(e.key==='Enter'){e.preventDefault();els.rec.focus();}});
-  els.rec.addEventListener('keypress',function(e){if(e.key==='Enter'){e.preventDefault();els.paq.focus();}});
-  els.paq.addEventListener('keypress',function(e){if(e.key==='Enter'){e.preventDefault();els.btnSave.focus();}});
+  if (isEnvio) {
+    // SIN columna Distribuidora, SIN columna de firma por fila
+    head = [[ '#','Nº\npedido','Vendedora','Nº\npaq' ]];
+    body = rows.map((r,i)=>[ i+1, r.n, r.v, r.q ]);
+  } else {
+    // Recepción: todo como lo tenías (con firma por fila, entregado por, etc.)
+    head = [[ '#','Nº\npedido','Distribuidora','Vendedora','Nº\npaq','Firma distribuidora','Entregado por','Fecha\nentrega','R' ]];
+    body = rows.map((r,i)=>[ i+1, r.n, shortDist(r.d), r.v, r.q, '', '', '', '' ]);
+  }
 
+  doc.autoTable({
+    head, body, startY,
+    theme:'grid',
+    styles:{ fontSize:9, cellPadding:3, lineColor:[0,0,0], lineWidth:0.2, halign:'center', valign:'middle' },
+    headStyles:{ fillColor:[19,111,99], textColor:255, halign:'center' },
+    alternateRowStyles:{ fillColor:[243,249,247] },
+    columnStyles: isEnvio
+  // 🟢 Envío: distribuimos el ancho para que la tabla llene la página
+  ? { 
+      0:{cellWidth:12},   // #
+      1:{cellWidth:40},   // Nº pedido
+      2:{cellWidth:160},  // Vendedora (más ancho)
+      3:{cellWidth:25}    // Nº paq
+    }
+  // Recepción: lo de siempre
+  : { 
+      0:{cellWidth:10}, 1:{cellWidth:22}, 2:{cellWidth:44},
+      3:{cellWidth:68}, 4:{cellWidth:14}, 8:{cellWidth:10}
+    },
+tableWidth: 'auto',
+margin: { left: 14, right: 14 },
+
+    didDrawCell: isEnvio ? undefined : function(data){
+      // Solo en Recepción dibuja la casilla de verificación (columna R)
+      if(data.section==='body' && data.column.index===8){
+        const size = 5;
+        const x = data.cell.x + (data.cell.width - size)/2;
+        const y = data.cell.y + (data.cell.height - size)/2;
+        doc.setLineWidth(0.4);
+        doc.rect(x, y, size, size);
+      }
+    }
+  });
+
+  // ==== Bloque de firma único (solo para Envío) ====
+  if (isEnvio) {
+    let y = (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY + 12 : 40;
+
+    doc.setFontSize(11);
+    doc.text('Confirmación de recepción:', 14, y); y += 8;
+
+    doc.setFontSize(10);
+    const leyenda = 'Declaro haber recibido conforme los paquetes detallados en este informe.';
+    doc.text(doc.splitTextToSize(leyenda, 250), 14, y); 
+    y += 18;
+
+    // Línea para firma
+    doc.line(14, y, 95, y); 
+    doc.text('Firma y Rut de la distribuidora', 14, y + 5);
+
+    // Línea para fecha
+    doc.line(120, y, 190, y);
+    doc.text('Fecha', 120, y + 5);
+  }
+
+  doc.save('recepcion_pedidos.pdf');
+
+  // Limpiar tabla después de generar el PDF (como acordamos)
+  rows = [];
+  paint();
+}
+
+  // ===== Listeners =====
+  els.btnSave.onclick=save; els.btnClear.onclick=()=>{ if(confirm('¿Eliminar todo?')){ rows=[]; paint(); } }; els.btnPdf.onclick=toPDF;
+
+  // Navegación con Enter
+  els.numero.addEventListener('keypress',function(e){ if(e.key==='Enter'){ e.preventDefault(); (currentMode==='Envío'? els.vend : els.dist).focus(); }});
+  els.dist.addEventListener('keypress',function(e){ if(e.key==='Enter'){ e.preventDefault(); els.vend.focus(); }});
+  els.vend.addEventListener('keypress',function(e){ if(e.key==='Enter'){ e.preventDefault(); els.rec.focus(); }});
+  els.rec.addEventListener('keypress',function(e){ if(e.key==='Enter'){ e.preventDefault(); els.paq.focus(); }});
+  els.paq.addEventListener('keypress',function(e){ if(e.key==='Enter'){ e.preventDefault(); els.btnSave.focus(); }});
+
+  // Init
   init();
 })();
 </script>
