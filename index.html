@@ -179,8 +179,85 @@ const REC = [
   "Juan Fernandez",
 ];
 
+// ===============================
+// ✅ Conexión a Google Apps Script
+// ===============================
+// URL de tu Web App (Apps Script)
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxuQsp71wM3ZMq89B5KDlM4jZlPYQaz24oqPGA6s9IC_3VWzFcCZ5ZvA6kGSx889vK00g/exec";
 
+// Acciones que vamos a intentar para guardar.
+// (Esto hace que el front sea resistente si el backend usa otro nombre de acción.)
+const SAVE_ACTION_CANDIDATES = [
+  "savePedido",
+  "guardarPedido",
+  "save",
+  "addPedido",
+  "createPedido"
+];
 
+async function fetchJsonSafe(res){
+  const text = await res.text();
+  try { return { ok: res.ok, json: JSON.parse(text), text }; }
+  catch { return { ok: res.ok, json: null, text }; }
+}
+
+function looksLikeSuccess(payload){
+  if(!payload) return false;
+  if(typeof payload === 'string'){
+    const t = payload.trim().toLowerCase();
+    return t === 'ok' || t === 'success' || t.includes('guardado') || t.includes('saved');
+  }
+  if(typeof payload === 'object'){
+    if(payload.ok === true || payload.success === true) return true;
+    if(typeof payload.status === 'string' && payload.status.toLowerCase() === 'ok') return true;
+    if(typeof payload.result === 'string' && payload.result.toLowerCase() === 'ok') return true;
+  }
+  return false;
+}
+
+async function postToBackend(action, data){
+  // 1) Intento JSON
+  try{
+    const res = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      mode: 'cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ...data })
+    });
+    const out = await fetchJsonSafe(res);
+    const payload = out.json ?? out.text;
+    if(looksLikeSuccess(payload)) return { ok:true, payload };
+    // si respondió pero no fue éxito, devolvemos el contenido para diagnóstico
+    return { ok:false, payload };
+  }catch(err){
+    // 2) Fallback: form-urlencoded (muchos GAS lo leen así)
+    const form = new URLSearchParams();
+    form.set('action', action);
+    Object.entries(data).forEach(([k,v])=>form.set(k, String(v ?? '')));
+    const res2 = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      mode: 'cors',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+      body: form.toString()
+    });
+    const out2 = await fetchJsonSafe(res2);
+    const payload2 = out2.json ?? out2.text;
+    if(looksLikeSuccess(payload2)) return { ok:true, payload: payload2 };
+    return { ok:false, payload: payload2, error: String(err) };
+  }
+}
+
+async function savePedidoToSheet(data){
+  // Probamos distintas acciones hasta que una funcione.
+  // Si tu backend usa un nombre distinto, aquí lo ajustamos en 1 sola línea.
+  let last;
+  for(const action of SAVE_ACTION_CANDIDATES){
+    const r = await postToBackend(action, data);
+    last = r;
+    if(r.ok) return r;
+  }
+  return last || { ok:false, payload:'No hubo respuesta' };
+}
 
   // ===== Referencias UI =====
   const els={
@@ -235,14 +312,57 @@ const REC = [
   ui.distEnvio.addEventListener('change',()=>{ if(currentMode==='Envío'){ els.dist.value=ui.distEnvio.value||''; }});
 
   // ===== CRUD =====
-  function save(){
+  async function save(){
     const distValue=(currentMode==='Envío')?ui.distEnvio.value:els.dist.value;
     if(!els.numero.value||!distValue||!els.vend.value||!els.rec.value||!els.paq.value){alert('Completa todos los campos');return;}
-    const data={n:els.numero.value.trim(), d:distValue, v:els.vend.value.trim(), q:Number(els.paq.value)};
+
+    // Datos base (los que ya manejas)
+    const data={
+      n:els.numero.value.trim(),
+      d:distValue,
+      v:els.vend.value.trim(),
+      q:Number(els.paq.value)
+    };
+
+    // 🔗 Datos para el Google Sheet (coinciden con tu estructura: FECHA, PEDIDO, DISTRIBUIDORA, VENDEDORA, PAQUETES, ENVIADO)
+    // Nota: ENVIADO lo dejamos en "NO" por defecto. Luego, en el flujo de Envío lo marcaremos como "SI".
+    const payload={
+      id: (editIndex>-1 && rows[editIndex] && rows[editIndex].id) ? rows[editIndex].id : '',
+      fecha: new Date().toISOString(),
+      pedido: data.n,
+      distribuidora: data.d,
+      vendedora: data.v,
+      paquetes: data.q,
+      recibidoPor: els.rec.value,
+      enviado: 'NO',
+      modo: currentMode
+    };
+
+    // UX: deshabilitamos el botón mientras guarda
+    els.btnSave.disabled = true;
+    els.btnSave.textContent = 'Guardando…';
+
+    const result = await savePedidoToSheet(payload);
+
+    els.btnSave.disabled = false;
+    els.btnSave.textContent = 'Guardar pedido';
+
+    if(!result || !result.ok){
+      // Mostramos lo que respondió el backend para que lo ajustemos sin adivinar
+      const msg = (result && result.payload) ? (typeof result.payload === 'string' ? result.payload : JSON.stringify(result.payload)) : 'Error desconocido';
+      alert('No se pudo guardar en Google Sheets.
+
+Detalle:
+' + msg);
+      return;
+    }
+
+    // ✅ Si el backend guardó OK, mantenemos tu comportamiento actual en pantalla
     if(editIndex>-1){ rows[editIndex]=data; editIndex=-1; } else { rows.push(data); }
     els.recibidoTop.textContent=els.rec.value;
     els.numero.value=''; els.vend.value=''; els.paq.value=1; if(currentMode==='Recepción'){ els.dist.selectedIndex=0; }
-    paint(); els.numero.focus();
+    paint();
+    els.numero.focus();
   }
 
   function paint(){
@@ -279,9 +399,8 @@ const REC = [
   // Si es Envío, muestra una sola vez la distribuidora en el encabezado
   if (isEnvio && ui.distEnvio && ui.distEnvio.value) {
     doc.setFont(undefined, 'bold');
-doc.text(`Distribuidora: ${ui.distEnvio.value}`, 14, 26);
-doc.setFont(undefined, 'normal'); // volver a normal para el resto
-
+    doc.text(`Distribuidora: ${ui.distEnvio.value}`, 14, 26);
+    doc.setFont(undefined, 'normal'); // volver a normal para el resto
   }
 
   // ==== Tabla ====
@@ -316,8 +435,8 @@ doc.setFont(undefined, 'normal'); // volver a normal para el resto
       0:{cellWidth:10}, 1:{cellWidth:22}, 2:{cellWidth:44},
       3:{cellWidth:68}, 4:{cellWidth:14}, 8:{cellWidth:10}
     },
-tableWidth: 'auto',
-margin: { left: 14, right: 14 },
+    tableWidth: 'auto',
+    margin: { left: 14, right: 14 },
 
     didDrawCell: isEnvio ? undefined : function(data){
       // Solo en Recepción dibuja la casilla de verificación (columna R)
@@ -359,11 +478,10 @@ margin: { left: 14, right: 14 },
   paint();
 }
 
-
-
-
   // ===== Listeners =====
-  els.btnSave.onclick=save; els.btnClear.onclick=()=>{ if(confirm('¿Eliminar todo?')){ rows=[]; paint(); } }; els.btnPdf.onclick=toPDF;
+  els.btnSave.onclick=save; 
+  els.btnClear.onclick=()=>{ if(confirm('¿Eliminar todo?')){ rows=[]; paint(); } }; 
+  els.btnPdf.onclick=toPDF;
 
   // Navegación con Enter
   els.numero.addEventListener('keypress',function(e){ if(e.key==='Enter'){ e.preventDefault(); (currentMode==='Envío'? els.vend : els.dist).focus(); }});
