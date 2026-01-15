@@ -48,14 +48,14 @@
     td.actions-cell button{flex:1; text-align:center;}
     th:last-child, td.actions-cell{width:150px;}
 
-    /* 🎯 Ajuste final de la tabla en pantalla */
+    /* Ajuste final de la tabla en pantalla */
     #tbl tbody tr { height: auto !important; }
     #tbl tbody td { padding: 2px 6px !important; line-height: 1.1 !important; }
     #tbl tbody td.actions-cell { padding-top: 0 !important; padding-bottom: 0 !important; }
     #tbl tbody td.actions-cell .btn-edit,
     #tbl tbody td.actions-cell .btn-del { padding: 2px 6px !important; font-size: 12px !important; }
 
-    /* 🌸 Filas alternadas tipo Excel (pantalla) */
+    /* Filas alternadas tipo Excel (pantalla) */
     #tbl tbody tr:nth-child(odd) { background-color: #f3f9f7 !important; }
     #tbl tbody tr:nth-child(even) { background-color: #ffffff !important; }
 
@@ -290,7 +290,7 @@ async function savePedidoToSheet(data){
     loadSelect(els.dist,DIST); loadSelect(els.rec,REC); loadSelect(ui.distEnvio,DIST);
     setMode('Recepción');
   }
-  function loadSelect(sel,list){sel.innerHTML='<option value="" disabled selected>Selecciona…</option>'+list.map(x=>`<option>${x}</option>`).join('');}
+  function loadSelect(sel,list){sel.innerHTML='<option value="" disabled selected>Selecciona...</option>'+list.map(x=>`<option>${x}</option>`).join('');}
   function shortDist(full){const p=full.trim().split(/\s+/); if(p.length>=4)return `${p[0]} ${p[2]}`; if(p.length===3)return `${p[0]} ${p[1]}`; if(p.length===2)return `${p[0]} ${p[1]}`; return full;}
 
   // ===== Selector de modo =====
@@ -306,7 +306,7 @@ async function savePedidoToSheet(data){
       els.dist.disabled=false;
       els.dist.selectedIndex=0; // vuelve al estado original
     }
-    // ✅ Requisito: al cambiar de modo, limpiar la tabla
+    // Requisito: al cambiar de modo, limpiar la tabla
     clearTableAndForm();
   }
   ui.modeRecep.addEventListener('change',()=>setMode('Recepción'));
@@ -375,8 +375,8 @@ Detalle:
       <td>${r.v}</td>
       <td class="num">${r.q}</td>
       <td class="actions-cell">
-        <button class="btn-edit" onclick="editRow(${i})">✏️ Editar</button>
-        <button class="btn-del" onclick="delRow(${i})">🗑️ Eliminar</button>
+        <button class="btn-edit" onclick="editRow(${i})">Editar</button>
+        <button class="btn-del" onclick="delRow(${i})">Eliminar</button>
       </td>
     </tr>`).join('');
   }
@@ -425,7 +425,7 @@ Detalle:
     headStyles:{ fillColor:[19,111,99], textColor:255, halign:'center' },
     alternateRowStyles:{ fillColor:[243,249,247] },
     columnStyles: isEnvio
-  // 🟢 Envío: distribuimos el ancho para que la tabla llene la página
+  // Envio: distribuimos el ancho para que la tabla llene la pagina
   ? { 
       0:{cellWidth:12},   // #
       1:{cellWidth:40},   // Nº pedido
