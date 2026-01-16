@@ -188,7 +188,7 @@ const DIST = [
 const REC = [
   "Harumi Araujo",
   "Mireya Venegas",
-  "Daniel Parada",
+  "IDaniel Parada",
   "Claudia Cuero",
   "Maria Alvarez",
   "Juan Fernandez",
@@ -529,7 +529,7 @@ ${urlPreview}`);
       const ids = rows.map(r=>r.id).filter(Boolean);
       if (ids.length) {
         const payload = { action: 'markSent', ids, envioId: `ENV-${new Date().toISOString().slice(0,10)}` };
-        await fetch(APPS_SCRIPT_URL, {
+        fetch(APPS_SCRIPT_URL, {
           method: 'POST',
           headers: { 'Content-Type':'text/plain;charset=utf-8' },
           body: JSON.stringify(payload)
