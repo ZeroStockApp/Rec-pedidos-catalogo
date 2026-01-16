@@ -352,10 +352,10 @@ async function savePedidoToSheet(data){
     if(!result || !result.ok){
       // Mostramos lo que respondió el backend para que lo ajustemos sin adivinar
       const msg = (result && result.payload) ? (typeof result.payload === 'string' ? result.payload : JSON.stringify(result.payload)) : 'Error desconocido';
-      alert('No se pudo guardar en Google Sheets.
+      alert(`No se pudo guardar en Google Sheets.
 
 Detalle:
-' + msg);
+${msg}`);
       return;
     }
 
