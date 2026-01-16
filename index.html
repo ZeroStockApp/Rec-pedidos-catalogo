@@ -327,10 +327,8 @@ async function cargarPendientesEnvio(){
 
   const dist = (ui.distEnvio && ui.distEnvio.value) ? ui.distEnvio.value : '';
   if(!dist){ const msg = "No se pudo cargar pedidos pendientes (backend sin accion de consulta)."+
-        "
 
 Solucion: agregar doGet(e) en Apps Script para action=getPending."+
-        "
 
 Ultima respuesta del backend:
 " + (lastRaw || "(vacio)");
