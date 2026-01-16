@@ -91,6 +91,18 @@
           <label for="distEnvio">Distribuidora (modo Envío — se usa para todo)</label>
           <select id="distEnvio"></select>
         </div>
+        <div class="col-3">
+          <label for="fechaDesde">Desde</label>
+          <input id="fechaDesde" type="date" />
+        </div>
+        <div class="col-3">
+          <label for="fechaHasta">Hasta</label>
+          <input id="fechaHasta" type="date" />
+        </div>
+        <div class="col-12" style="display:flex;gap:10px;align-items:flex-end;">
+          <button class="primary" type="button" id="btnCargar" style="margin-top:6px;">Cargar pedidos pendientes</button>
+          <span id="envioStatus" style="color:#6b7280;font-size:13px;"></span>
+        </div>
       </div>
 
       <div class="row">
@@ -265,7 +277,11 @@ async function savePedidoToSheet(data){
     modeRecep:document.getElementById('modeRecep'),
     modeEnvio:document.getElementById('modeEnvio'),
     envioBlock:document.getElementById('envioBlock'),
-    distEnvio:document.getElementById('distEnvio')
+    distEnvio:document.getElementById('distEnvio'),
+    fechaDesde:document.getElementById('fechaDesde'),
+    fechaHasta:document.getElementById('fechaHasta'),
+    btnCargar:document.getElementById('btnCargar'),
+    envioStatus:document.getElementById('envioStatus')
   };
 
   let currentMode='Recepción';
@@ -298,6 +314,89 @@ async function savePedidoToSheet(data){
   ui.modeRecep.addEventListener('change',()=>setMode('Recepción'));
   ui.modeEnvio.addEventListener('change',()=>setMode('Envío'));
   ui.distEnvio.addEventListener('change',()=>{ if(currentMode==='Envío'){ els.dist.value=ui.distEnvio.value||''; }});
+
+  // ===== Envío: cargar pedidos pendientes desde Google Sheets =====
+  const PENDING_ACTION_CANDIDATES = ['getPending','listPending','pending','getPendientes','listarPendientes'];
+
+  function setEnvioStatus(msg){ if(ui.envioStatus) ui.envioStatus.textContent = msg || ''; }
+
+  async function fetchJSON(url, opts){
+    const res = await fetch(url, opts);
+    const txt = await res.text();
+    try { return { ok:true, json: JSON.parse(txt), raw: txt, status: res.status }; }
+    catch(e){ return { ok:false, json:null, raw: txt, status: res.status }; }
+  }
+
+  function toYMD(d){
+    // acepta Date o string YYYY-MM-DD
+    if(!d) return '';
+    if(typeof d === 'string') return d;
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    const day = String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${day}`;
+  }
+
+  function normalizePendingItem(it){
+    // Soporta varias formas de respuesta del backend
+    const id = it.id || it.ID || it.Id || it._id || '';
+    const n  = it.pedido || it.PEDIDO || it.numPedido || it.numero || it.n || '';
+    const d  = it.distribuidora || it.DISTRIBUIDORA || it.dist || it.d || ui.distEnvio.value || '';
+    const v  = it.vendedora || it.VENDEDORA || it.vend || it.v || '';
+    const q  = Number(it.paquetes || it.PAQUETES || it.q || it.cantidad || 1);
+    const fecha = it.fecha || it.FECHA || it.date || it.f || '';
+    return { id, n:String(n), d:String(d), v:String(v), q: isNaN(q)?1:q, fecha };
+  }
+
+  async function cargarPendientesEnvio(){
+    if(currentMode!=='Envío') return;
+    const dist = (ui.distEnvio && ui.distEnvio.value) ? ui.distEnvio.value : '';
+    if(!dist){ alert('Selecciona una distribuidora (modo Envío).'); return; }
+
+    const desde = ui.fechaDesde && ui.fechaDesde.value ? ui.fechaDesde.value : '';
+    const hasta = ui.fechaHasta && ui.fechaHasta.value ? ui.fechaHasta.value : '';
+    if(!desde || !hasta){ alert('Selecciona el rango de fechas (Desde y Hasta).'); return; }
+
+    setEnvioStatus('Cargando pendientes…');
+    ui.btnCargar && (ui.btnCargar.disabled = true);
+
+    // Intentamos varias acciones para no depender de un nombre exacto
+    let lastErr = '';
+    let data = null;
+
+    for(const act of PENDING_ACTION_CANDIDATES){
+      const url = `${APPS_SCRIPT_URL}?action=${encodeURIComponent(act)}&distribuidora=${encodeURIComponent(dist)}&desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}`;
+      const out = await fetchJSON(url, { method:'GET' });
+      if(out.ok && out.json && (out.json.ok === true || Array.isArray(out.json.items) || Array.isArray(out.json.data))){
+        data = out.json;
+        break;
+      }
+      lastErr = out.raw || `HTTP ${out.status}`;
+    }
+
+    ui.btnCargar && (ui.btnCargar.disabled = false);
+
+    if(!data){
+      setEnvioStatus('No se pudo cargar (revisar backend).');
+      alert(`No se pudo cargar pedidos pendientes.
+
+Detalle:
+${lastErr}`);
+      return;
+    }
+
+    const items = data.items || data.data || data.pedidos || [];
+    const normalized = (items || []).map(normalizePendingItem).filter(x=>x.n);
+
+    rows = normalized;
+    editIndex = -1;
+    paint();
+
+    setEnvioStatus(`Listo: ${rows.length} pedido(s) pendiente(s).`);
+  }
+
+  ui.btnCargar && ui.btnCargar.addEventListener('click', cargarPendientesEnvio);
+
 
   // ===== CRUD =====
   async function save(){
@@ -479,6 +578,24 @@ ${urlPreview}`);
   }
 
   doc.save('recepcion_pedidos.pdf');
+
+  // ✅ En modo Envío: marcar como enviados en Google Sheets (para que no vuelvan a aparecer)
+  if (isEnvio) {
+    try {
+      const ids = rows.map(r=>r.id).filter(Boolean);
+      if (ids.length) {
+        const payload = { action: 'markSent', ids, envioId: `ENV-${new Date().toISOString().slice(0,10)}` };
+        await fetch(APPS_SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type':'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload)
+        });
+      }
+    } catch (e) {
+      // Si falla el marcado, no bloqueamos el PDF. Mostramos alerta para revisar.
+      alert('PDF generado, pero no se pudo marcar como ENVIADO en Sheets.');
+    }
+  }
 
   // Limpiar tabla después de generar el PDF (como acordamos)
   rows = [];
