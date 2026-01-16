@@ -222,8 +222,9 @@ async function postToBackend(action, data){
   try{
     const res = await fetch(APPS_SCRIPT_URL, {
       method: 'POST',
-      mode: 'cors',
-      headers: { 'Content-Type': 'application/json' },
+      // Nota: "text/plain" evita el preflight CORS que suele romper con Apps Script,
+      // y aun asi permite enviar JSON para que el backend lo haga JSON.parse.
+      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
       body: JSON.stringify({ action, ...data })
     });
     const out = await fetchJsonSafe(res);
