@@ -324,17 +324,77 @@ function setEnvioStatus(msg){ if(ui.envioStatus) ui.envioStatus.textContent = ms
 
 async function cargarPendientesEnvio(){
   if(currentMode!=='Envío') return;
+
   const dist = (ui.distEnvio && ui.distEnvio.value) ? ui.distEnvio.value : '';
   if(!dist){ alert('Selecciona una distribuidora (modo Envío).'); return; }
-  if(!ui.fechaDesde || !ui.fechaHasta){
-    alert('Primero vamos a estabilizar el modo Envío. (Fase 1)');
-    return;
-  }
-  const desde = ui.fechaDesde.value || '';
-  const hasta = ui.fechaHasta.value || '';
+
+  const desde = ui.fechaDesde && ui.fechaDesde.value ? ui.fechaDesde.value : '';
+  const hasta = ui.fechaHasta && ui.fechaHasta.value ? ui.fechaHasta.value : '';
   if(!desde || !hasta){ alert('Selecciona el rango de fechas (Desde y Hasta).'); return; }
 
-  setEnvioStatus('Fase 1 OK. Siguiente: conectar consulta al backend.');
+  // Intentamos varias acciones por si el backend usa otro nombre
+  const ACTIONS = ['getPending','listPending','pendientes','getPendientes','listarPendientes'];
+
+  function pickArray(obj){
+    if(!obj) return [];
+    return obj.items || obj.data || obj.pedidos || obj.rows || [];
+  }
+  function normalize(it){
+    const id = it.id || it.ID || it.Id || it._id || '';
+    const n  = it.pedido || it.PEDIDO || it.numPedido || it.numero || it.n || '';
+    const d  = it.distribuidora || it.DISTRIBUIDORA || it.dist || it.d || dist;
+    const v  = it.vendedora || it.VENDEDORA || it.vend || it.v || '';
+    const q  = Number(it.paquetes || it.PAQUETES || it.q || it.cantidad || 1);
+    return { id, n:String(n||''), d:String(d||''), v:String(v||''), q: isNaN(q)?1:q };
+  }
+
+  setEnvioStatus('Cargando pedidos pendientes…');
+  if(ui.btnCargar) ui.btnCargar.disabled = true;
+
+  let lastRaw = '';
+  let okPayload = null;
+
+  try{
+    for(const action of ACTIONS){
+      const url = `${APPS_SCRIPT_URL}?action=${encodeURIComponent(action)}&distribuidora=${encodeURIComponent(dist)}&desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}`;
+      const res = await fetch(url, { method:'GET' });
+      const raw = await res.text();
+      lastRaw = raw;
+
+      let json = null;
+      try{ json = JSON.parse(raw); } catch(e){ json = null; }
+
+      if(json && (json.ok === true || Array.isArray(json.items) || Array.isArray(json.data) || Array.isArray(json.pedidos))){
+        okPayload = json;
+        break;
+      }
+    }
+  } finally {
+    if(ui.btnCargar) ui.btnCargar.disabled = false;
+  }
+
+  if(!okPayload){
+    setEnvioStatus('No se pudo cargar. Falta implementar la consulta en Apps Script.');
+    alert(
+      'No se pudo cargar pedidos pendientes porque el backend aún no tiene la acción de consulta.
+
+' +
+      'Solución: agregar doGet(e) en Apps Script para action=getPending.
+
+' +
+      'Última respuesta del backend:
+' + (lastRaw || '(vacío)')
+    );
+    return;
+  }
+
+  const items = pickArray(okPayload).map(normalize).filter(x=>x.n);
+
+  rows = items;
+  editIndex = -1;
+  paint();
+
+  setEnvioStatus(`Listo: ${rows.length} pedido(s) pendiente(s).`);
 }
 
 if(ui.btnCargar){
