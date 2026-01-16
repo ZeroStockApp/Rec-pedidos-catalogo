@@ -188,7 +188,7 @@ const DIST = [
 const REC = [
   "Harumi Araujo",
   "Mireya Venegas",
-  "IDaniel Parada",
+  "Daniel Parada",
   "Claudia Cuero",
   "Maria Alvarez",
   "Juan Fernandez",
@@ -348,7 +348,7 @@ async function cargarPendientesEnvio(){
     return { id, n:String(n||''), d:String(d||''), v:String(v||''), q: isNaN(q)?1:q };
   }
 
-  setEnvioStatus('Cargando pedidos pendientes…');
+  setEnvioStatus('Cargando pedidos pendientes...');
   if(ui.btnCargar) ui.btnCargar.disabled = true;
 
   let lastRaw = '';
@@ -356,7 +356,11 @@ async function cargarPendientesEnvio(){
 
   try{
     for(const action of ACTIONS){
-      const url = `${APPS_SCRIPT_URL}?action=${encodeURIComponent(action)}&distribuidora=${encodeURIComponent(dist)}&desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}`;
+      const url = APPS_SCRIPT_URL
+        + '?action=' + encodeURIComponent(action)
+        + '&distribuidora=' + encodeURIComponent(dist)
+        + '&desde=' + encodeURIComponent(desde)
+        + '&hasta=' + encodeURIComponent(hasta);
       const res = await fetch(url, { method:'GET' });
       const raw = await res.text();
       lastRaw = raw;
@@ -394,7 +398,7 @@ async function cargarPendientesEnvio(){
   editIndex = -1;
   paint();
 
-  setEnvioStatus(`Listo: ${rows.length} pedido(s) pendiente(s).`);
+  setEnvioStatus('Listo: ' + rows.length + ' pedido(s) pendiente(s).');
 }
 
 if(ui.btnCargar){
