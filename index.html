@@ -188,7 +188,7 @@ const DIST = [
 const REC = [
   "Harumi Araujo",
   "Mireya Venegas",
-  "IDaniel Parada",
+  "Daniel Parada",
   "Claudia Cuero",
   "Maria Alvarez",
   "Juan Fernandez",
@@ -316,30 +316,90 @@ async function savePedidoToSheet(data){
   ui.modeEnvio.addEventListener('change',()=>setMode('Envío'));
   ui.distEnvio.addEventListener('change',()=>{ if(currentMode==='Envío'){ els.dist.value=ui.distEnvio.value||''; }});
 
-  // ===== Envío (FASE 1): UI estable y sin errores =====
-// Nota: primero aseguramos que el modo Envío no rompa los selects.
-// En la siguiente fase conectamos la carga de pendientes.
+  // ===== Envío: cargar pedidos pendientes (Apps Script doGet action=query) =====
+  function setEnvioStatus(msg){ if(ui.envioStatus) ui.envioStatus.textContent = msg || ''; }
 
-function setEnvioStatus(msg){ if(ui.envioStatus) ui.envioStatus.textContent = msg || ''; }
-
-async function cargarPendientesEnvio(){
-  if(currentMode!=='Envío') return;
-  const dist = (ui.distEnvio && ui.distEnvio.value) ? ui.distEnvio.value : '';
-  if(!dist){ alert('Selecciona una distribuidora (modo Envío).'); return; }
-  if(!ui.fechaDesde || !ui.fechaHasta){
-    alert('Primero vamos a estabilizar el modo Envío. (Fase 1)');
-    return;
+  function normalizeQueryResponse(raw){
+    // Esperado desde Apps Script:
+    // { ok:true, items:[ {id, fecha, numPedido, distribuidora, vendedora, paquetes, enviado} ] }
+    if(!raw) return { ok:false, items:[] };
+    if(typeof raw === 'string'){
+      try{ raw = JSON.parse(raw); }catch(e){ return { ok:false, items:[] }; }
+    }
+    if(typeof raw === 'object'){
+      const items = Array.isArray(raw.items) ? raw.items : [];
+      return { ok: !!raw.ok, items };
+    }
+    return { ok:false, items:[] };
   }
-  const desde = ui.fechaDesde.value || '';
-  const hasta = ui.fechaHasta.value || '';
-  if(!desde || !hasta){ alert('Selecciona el rango de fechas (Desde y Hasta).'); return; }
 
-  setEnvioStatus('Fase 1 OK. Siguiente: conectar consulta al backend.');
-}
+  function mapItemToRow(it){
+    return {
+      id: String(it.id || ''),
+      n: String(it.numPedido || '').trim(),
+      d: String(it.distribuidora || '').trim(),
+      v: String(it.vendedora || '').trim(),
+      q: Number(it.paquetes || 0) || 0,
+    };
+  }
 
-if(ui.btnCargar){
-  ui.btnCargar.addEventListener('click', cargarPendientesEnvio);
-}
+  async function cargarPendientesEnvio(){
+    if(currentMode!=='Envío') return;
+
+    const dist = (ui.distEnvio && ui.distEnvio.value) ? ui.distEnvio.value : '';
+    if(!dist){ alert('Selecciona una distribuidora (modo Envío).'); return; }
+
+    const desde = ui.fechaDesde ? (ui.fechaDesde.value || '') : '';
+    const hasta = ui.fechaHasta ? (ui.fechaHasta.value || '') : '';
+    if(!desde || !hasta){ alert('Selecciona el rango de fechas (Desde y Hasta).'); return; }
+
+    setEnvioStatus('Cargando pendientes…');
+    ui.btnCargar.disabled = true;
+
+    try{
+      // Apps Script espera: action=query&distribuidora=...&from=YYYY-MM-DD&to=YYYY-MM-DD
+      const qs = new URLSearchParams();
+      qs.set('action','query');
+      qs.set('distribuidora', dist);
+      qs.set('from', desde);
+      qs.set('to', hasta);
+
+      const res = await fetch(`${APPS_SCRIPT_URL}?${qs.toString()}`, { method:'GET' });
+      const out = await fetchJsonSafe(res);
+      const raw = out.json ?? out.text;
+
+      const parsed = normalizeQueryResponse(raw);
+      if(!parsed.ok){
+        console.warn('[query pendientes] respuesta', raw);
+        setEnvioStatus('No se pudo cargar (respuesta inválida).');
+        alert('No se pudo cargar pendientes. Revisa que la Web App esté desplegada y accesible.');
+        return;
+      }
+
+      const list = parsed.items || [];
+      if(!list.length){
+        rows = [];
+        paint();
+        setEnvioStatus('No hay pedidos pendientes en ese rango.');
+        return;
+      }
+
+      rows = list.map(mapItemToRow).filter(r => r.n);
+      paint();
+      setEnvioStatus(`Listo: ${rows.length} pedido(s) cargado(s).`);
+
+    }catch(e){
+      console.error('[cargarPendientesEnvio]', e);
+      setEnvioStatus('Error al cargar pendientes.');
+      alert('Error al cargar pendientes desde el backend.');
+    }finally{
+      ui.btnCargar.disabled = false;
+    }
+  }
+
+  if(ui.btnCargar){
+    ui.btnCargar.addEventListener('click', cargarPendientesEnvio);
+  }
 
 
   // ===== CRUD =====
@@ -349,6 +409,7 @@ if(ui.btnCargar){
 
     // Datos base (los que ya manejas)
     const data={
+      id: (editIndex>-1 && rows[editIndex] && rows[editIndex].id) ? rows[editIndex].id : '',
       n:els.numero.value.trim(),
       d:distValue,
       v:els.vend.value.trim(),
@@ -407,8 +468,11 @@ ${urlPreview}`);
       return;
     }
 
-    // ✅ Si el backend guardó OK, mantenemos tu comportamiento actual en pantalla
-    if(editIndex>-1){ rows[editIndex]=data; editIndex=-1; } else { rows.push(data); }
+    // ✅ Si el backend guardó OK, guardamos también el ID que devuelve (para markSent en modo Envío)
+    const returnedId = (result && result.payload && typeof result.payload === 'object' && result.payload.id) ? String(result.payload.id) : '';
+    const dataToStore = { ...data, id: data.id || returnedId };
+
+    if(editIndex>-1){ rows[editIndex]=dataToStore; editIndex=-1; } else { rows.push(dataToStore); }
     els.recibidoTop.textContent=els.rec.value;
     els.numero.value=''; els.vend.value=''; els.paq.value=1; if(currentMode==='Recepción'){ els.dist.selectedIndex=0; }
     paint();
