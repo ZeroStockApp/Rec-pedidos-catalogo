@@ -188,7 +188,7 @@ const DIST = [
 const REC = [
   "Harumi Araujo",
   "Mireya Venegas",
-  "Daniel Parada",
+  "IDaniel Parada",
   "Claudia Cuero",
   "Maria Alvarez",
   "Juan Fernandez",
@@ -324,7 +324,243 @@ function setEnvioStatus(msg){ if(ui.envioStatus) ui.envioStatus.textContent = ms
 
 async function cargarPendientesEnvio(){
   if(currentMode!=='Envío') return;
-
   const dist = (ui.distEnvio && ui.distEnvio.value) ? ui.distEnvio.value : '';
-  if(!dist){ const msg = "No se pudo cargar pedidos pendientes (backend sin accion de consulta)."+
-// (nota interna removida: antes aqui habia un texto suelto que rompia el JS)
+  if(!dist){ alert('Selecciona una distribuidora (modo Envío).'); return; }
+  if(!ui.fechaDesde || !ui.fechaHasta){
+    alert('Primero vamos a estabilizar el modo Envío. (Fase 1)');
+    return;
+  }
+  const desde = ui.fechaDesde.value || '';
+  const hasta = ui.fechaHasta.value || '';
+  if(!desde || !hasta){ alert('Selecciona el rango de fechas (Desde y Hasta).'); return; }
+
+  setEnvioStatus('Fase 1 OK. Siguiente: conectar consulta al backend.');
+}
+
+if(ui.btnCargar){
+  ui.btnCargar.addEventListener('click', cargarPendientesEnvio);
+}
+
+
+  // ===== CRUD =====
+  async function save(){
+    const distValue=(currentMode==='Envío')?ui.distEnvio.value:els.dist.value;
+    if(!els.numero.value||!distValue||!els.vend.value||!els.rec.value||!els.paq.value){alert('Completa todos los campos');return;}
+
+    // Datos base (los que ya manejas)
+    const data={
+      n:els.numero.value.trim(),
+      d:distValue,
+      v:els.vend.value.trim(),
+      q:Number(els.paq.value)
+    };
+
+    // 🔗 Datos para el Google Sheet (coinciden con tu estructura: FECHA, PEDIDO, DISTRIBUIDORA, VENDEDORA, PAQUETES, ENVIADO)
+    // Nota: ENVIADO lo dejamos en "NO" por defecto. Luego, en el flujo de Envío lo marcaremos como "SI".
+    const payload={
+      id: (editIndex>-1 && rows[editIndex] && rows[editIndex].id) ? rows[editIndex].id : '',
+      fecha: new Date().toISOString(),
+      pedido: data.n,
+      distribuidora: data.d,
+      vendedora: data.v,
+      paquetes: data.q,
+      recibidoPor: els.rec.value,
+      enviado: 'NO',
+      modo: currentMode
+    };
+
+    // 👇 Para el backend, enviamos action solo por URL (asi lo pide el Apps Script)
+    // Enviamos los nombres que tu backend espera.
+    // - numPedido: requerido por el Apps Script (segun el error)
+    // - pedido: lo mantenemos por compatibilidad con tu hoja/otros usos
+    const payloadToSend = { action: SAVE_ACTION, numPedido: payload.pedido, pedido: payload.pedido, ...payload };
+
+    // UX: deshabilitamos el botón mientras guarda
+    els.btnSave.disabled = true;
+    els.btnSave.textContent = 'Guardando…';
+
+    console.log('[Guardar pedido]', BUILD_TAG, payloadToSend);
+    console.log('[Guardar pedido] URL preview:', `${APPS_SCRIPT_URL}?action=${encodeURIComponent(SAVE_ACTION)}&numPedido=${encodeURIComponent(payloadToSend.numPedido ?? '')}`);
+
+    const result = await savePedidoToSheet(payloadToSend);
+
+    els.btnSave.disabled = false;
+    els.btnSave.textContent = 'Guardar pedido';
+
+    if(!result || !result.ok){
+      // Mostramos lo que respondió el backend para que lo ajustemos sin adivinar
+      const msg = (result && result.payload) ? (typeof result.payload === 'string' ? result.payload : JSON.stringify(result.payload)) : 'Error desconocido';
+      const urlPreview = `${APPS_SCRIPT_URL}?action=${encodeURIComponent(SAVE_ACTION)}&numPedido=${encodeURIComponent(payloadToSend.numPedido ?? '')}`;
+      alert(`No se pudo guardar en Google Sheets.
+
+Detalle:
+${msg}
+
+BUILD_TAG: ${BUILD_TAG}
+
+Payload enviado (resumen):
+numPedido=${payloadToSend.numPedido}
+pedido=${payloadToSend.pedido}
+
+URL preview (deberia incluir numPedido):
+${urlPreview}`);
+      return;
+    }
+
+    // ✅ Si el backend guardó OK, mantenemos tu comportamiento actual en pantalla
+    if(editIndex>-1){ rows[editIndex]=data; editIndex=-1; } else { rows.push(data); }
+    els.recibidoTop.textContent=els.rec.value;
+    els.numero.value=''; els.vend.value=''; els.paq.value=1; if(currentMode==='Recepción'){ els.dist.selectedIndex=0; }
+    paint();
+    els.numero.focus();
+  }
+
+  function paint(){
+    els.tbody.innerHTML=rows.map((r,i)=>`<tr>
+      <td class="num">${i+1}</td>
+      <td>${r.n}</td>
+      <td>${shortDist(r.d)}</td>
+      <td>${r.v}</td>
+      <td class="num">${r.q}</td>
+      <td class="actions-cell">
+        <button class="btn-edit" onclick="editRow(${i})">Editar</button>
+        <button class="btn-del" onclick="delRow(${i})">Eliminar</button>
+      </td>
+    </tr>`).join('');
+  }
+
+  window.editRow=function(i){ const r=rows[i]; els.numero.value=r.n; els.dist.value=r.d; els.vend.value=r.v; els.paq.value=r.q; editIndex=i; if(currentMode==='Envío'){ ui.distEnvio.value=r.d; } };
+  window.delRow=function(i){ if(confirm('¿Eliminar este pedido?')){ rows.splice(i,1); paint(); } };
+
+ function toPDF(){
+  if(rows.length===0){ alert('No hay registros'); return; }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape' });
+
+  // Encabezado
+  doc.setFontSize(14);
+  doc.text('Recepción de Pedidos', 14, 14);
+  doc.setFontSize(10);
+  doc.text(`Generado: ${new Date().toLocaleString('es-CL')} | Recibido por: ${els.recibidoTop.textContent}`, 14, 20);
+
+  const isEnvio = (typeof currentMode !== 'undefined' && currentMode === 'Envío');
+
+  // Si es Envío, muestra una sola vez la distribuidora en el encabezado
+  if (isEnvio && ui.distEnvio && ui.distEnvio.value) {
+    doc.setFont(undefined, 'bold');
+    doc.text(`Distribuidora: ${ui.distEnvio.value}`, 14, 26);
+    doc.setFont(undefined, 'normal'); // volver a normal para el resto
+  }
+
+  // ==== Tabla ====
+  let head, body, startY = isEnvio ? 32 : 26;
+
+  if (isEnvio) {
+    // SIN columna Distribuidora, SIN columna de firma por fila
+    head = [[ '#','Nº\npedido','Vendedora','Nº\npaq' ]];
+    body = rows.map((r,i)=>[ i+1, r.n, r.v, r.q ]);
+  } else {
+    // Recepción: todo como lo tenías (con firma por fila, entregado por, etc.)
+    head = [[ '#','Nº\npedido','Distribuidora','Vendedora','Nº\npaq','Firma distribuidora','Entregado por','Fecha\nentrega','R' ]];
+    body = rows.map((r,i)=>[ i+1, r.n, shortDist(r.d), r.v, r.q, '', '', '', '' ]);
+  }
+
+  doc.autoTable({
+    head, body, startY,
+    theme:'grid',
+    styles:{ fontSize:9, cellPadding:3, lineColor:[0,0,0], lineWidth:0.2, halign:'center', valign:'middle' },
+    headStyles:{ fillColor:[19,111,99], textColor:255, halign:'center' },
+    alternateRowStyles:{ fillColor:[243,249,247] },
+    columnStyles: isEnvio
+  // Envio: distribuimos el ancho para que la tabla llene la pagina
+  ? { 
+      0:{cellWidth:12},   // #
+      1:{cellWidth:40},   // Nº pedido
+      2:{cellWidth:160},  // Vendedora (más ancho)
+      3:{cellWidth:25}    // Nº paq
+    }
+  // Recepción: lo de siempre
+  : { 
+      0:{cellWidth:10}, 1:{cellWidth:22}, 2:{cellWidth:44},
+      3:{cellWidth:68}, 4:{cellWidth:14}, 8:{cellWidth:10}
+    },
+    tableWidth: 'auto',
+    margin: { left: 14, right: 14 },
+
+    didDrawCell: isEnvio ? undefined : function(data){
+      // Solo en Recepción dibuja la casilla de verificación (columna R)
+      if(data.section==='body' && data.column.index===8){
+        const size = 5;
+        const x = data.cell.x + (data.cell.width - size)/2;
+        const y = data.cell.y + (data.cell.height - size)/2;
+        doc.setLineWidth(0.4);
+        doc.rect(x, y, size, size);
+      }
+    }
+  });
+
+  // ==== Bloque de firma único (solo para Envío) ====
+  if (isEnvio) {
+    let y = (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY + 12 : 40;
+
+    doc.setFontSize(11);
+    doc.text('Confirmación de recepción:', 14, y); y += 8;
+
+    doc.setFontSize(10);
+    const leyenda = 'Declaro haber recibido conforme los paquetes detallados en este informe.';
+    doc.text(doc.splitTextToSize(leyenda, 250), 14, y); 
+    y += 18;
+
+    // Línea para firma
+    doc.line(14, y, 95, y); 
+    doc.text('Firma y Rut de la distribuidora', 14, y + 5);
+
+    // Línea para fecha
+    doc.line(120, y, 190, y);
+    doc.text('Fecha', 120, y + 5);
+  }
+
+  doc.save('recepcion_pedidos.pdf');
+
+  // ✅ En modo Envío: marcar como enviados en Google Sheets (para que no vuelvan a aparecer)
+  if (isEnvio) {
+    try {
+      const ids = rows.map(r=>r.id).filter(Boolean);
+      if (ids.length) {
+        const payload = { action: 'markSent', ids, envioId: `ENV-${new Date().toISOString().slice(0,10)}` };
+        fetch(APPS_SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type':'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload)
+        });
+      }
+    } catch (e) {
+      // Si falla el marcado, no bloqueamos el PDF. Mostramos alerta para revisar.
+      alert('PDF generado, pero no se pudo marcar como ENVIADO en Sheets.');
+    }
+  }
+
+  // Limpiar tabla después de generar el PDF (como acordamos)
+  rows = [];
+  paint();
+}
+
+  // ===== Listeners =====
+  els.btnSave.onclick=save; 
+  els.btnClear.onclick=()=>{ if(confirm('¿Eliminar todo?')){ rows=[]; paint(); } }; 
+  els.btnPdf.onclick=toPDF;
+
+  // Navegación con Enter
+  els.numero.addEventListener('keypress',function(e){ if(e.key==='Enter'){ e.preventDefault(); (currentMode==='Envío'? els.vend : els.dist).focus(); }});
+  els.dist.addEventListener('keypress',function(e){ if(e.key==='Enter'){ e.preventDefault(); els.vend.focus(); }});
+  els.vend.addEventListener('keypress',function(e){ if(e.key==='Enter'){ e.preventDefault(); els.rec.focus(); }});
+  els.rec.addEventListener('keypress',function(e){ if(e.key==='Enter'){ e.preventDefault(); els.paq.focus(); }});
+  els.paq.addEventListener('keypress',function(e){ if(e.key==='Enter'){ e.preventDefault(); els.btnSave.focus(); }});
+
+  // Init
+  window.addEventListener('DOMContentLoaded', init);
+})();
+</script>
+</body>
+</html>
