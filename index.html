@@ -187,6 +187,9 @@ const REC = [
 // URL de tu Web App (Apps Script)
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxuQsp71wM3ZMq89B5KDlM4jZlPYQaz24oqPGA6s9IC_3VWzFcCZ5ZvA6kGSx889vK00g/exec";
 
+// Tag de version para saber si GitHub esta sirviendo el HTML nuevo
+const BUILD_TAG = "save-addOne-numPedido-v3";
+
 // Acciones que vamos a intentar para guardar.
 // (Esto hace que el front sea resistente si el backend usa otro nombre de acción.)
 // Accion fija para guardar (segun tu backend): addOne
@@ -327,6 +330,8 @@ async function savePedidoToSheet(data){
     els.btnSave.disabled = true;
     els.btnSave.textContent = 'Guardando…';
 
+    console.log('[Guardar pedido]', BUILD_TAG, payloadToSend);
+
     const result = await savePedidoToSheet(payloadToSend);
 
     els.btnSave.disabled = false;
@@ -338,7 +343,13 @@ async function savePedidoToSheet(data){
       alert(`No se pudo guardar en Google Sheets.
 
 Detalle:
-${msg}`);
+${msg}
+
+BUILD_TAG: ${BUILD_TAG}
+
+Payload enviado (resumen):
+numPedido=${payloadToSend.numPedido}
+pedido=${payloadToSend.pedido}`);
       return;
     }
 
