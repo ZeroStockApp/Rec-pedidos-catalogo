@@ -224,17 +224,15 @@ function looksLikeSuccess(payload){
 }
 
 async function postToBackend(action, data){
-  // ✅ En tu backend actual, action se espera como parametro (action=addOne / action=markSent)
-  // Por eso enviamos SIEMPRE como form-urlencoded y tambien en la URL.
-  const form = new URLSearchParams();
-  form.set('action', action);
-  Object.entries(data).forEach(([k,v]) => form.set(k, String(v ?? '')));
-
+  // ✅ Tu backend hace JSON.parse del body, pero tambien valida action (addOne / markSent).
+  // Para cumplir ambos: enviamos action en la URL y el body como JSON.
+  // Usamos Content-Type text/plain para evitar el preflight CORS tipico de Apps Script.
   const url = `${APPS_SCRIPT_URL}?action=${encodeURIComponent(action)}`;
+
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-    body: form.toString()
+    headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+    body: JSON.stringify({ action, ...data })
   });
 
   const out = await fetchJsonSafe(res);
