@@ -189,19 +189,10 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxuQsp71wM3ZMq8
 
 // Acciones que vamos a intentar para guardar.
 // (Esto hace que el front sea resistente si el backend usa otro nombre de acción.)
-const SAVE_ACTION_CANDIDATES = [
-  // Segun tu backend actual:
-  // - addOne: agregar un pedido
-  // - markSent: marcar como enviado (lo usaremos mas adelante)
-  "addOne",
+// Accion fija para guardar (segun tu backend): addOne
+// (Dejamos de probar multiples acciones para evitar confusiones con el ultimo intento.)
+const SAVE_ACTION = "addOne";
 
-  // Candidatas anteriores (por si en algun momento renombramos en el backend)
-  "savePedido",
-  "guardarPedido",
-  "save",
-  "addPedido",
-  "createPedido"
-];
 
 async function fetchJsonSafe(res){
   const text = await res.text();
@@ -232,7 +223,7 @@ async function postToBackend(action, data){
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-    body: JSON.stringify({ action, ...data })
+    body: JSON.stringify(data)
   });
 
   const out = await fetchJsonSafe(res);
@@ -242,16 +233,10 @@ async function postToBackend(action, data){
 }
 
 async function savePedidoToSheet(data){
-  // Probamos distintas acciones hasta que una funcione.
-  // Si tu backend usa un nombre distinto, aquí lo ajustamos en 1 sola línea.
-  let last;
-  for(const action of SAVE_ACTION_CANDIDATES){
-    const r = await postToBackend(action, data);
-    last = r;
-    if(r.ok) return r;
-  }
-  return last || { ok:false, payload:'No hubo respuesta' };
+  // Guardar pedido nuevo
+  return await postToBackend(SAVE_ACTION, data);
 }
+
 
   // ===== Referencias UI =====
   const els={
@@ -332,11 +317,14 @@ async function savePedidoToSheet(data){
       modo: currentMode
     };
 
+    // 👇 Para el backend, enviamos action solo por URL (asi lo pide el Apps Script)
+    const payloadToSend = { action: SAVE_ACTION, ...payload };
+
     // UX: deshabilitamos el botón mientras guarda
     els.btnSave.disabled = true;
     els.btnSave.textContent = 'Guardando…';
 
-    const result = await savePedidoToSheet(payload);
+    const result = await savePedidoToSheet(payloadToSend);
 
     els.btnSave.disabled = false;
     els.btnSave.textContent = 'Guardar pedido';
