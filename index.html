@@ -318,7 +318,10 @@ async function savePedidoToSheet(data){
     };
 
     // 👇 Para el backend, enviamos action solo por URL (asi lo pide el Apps Script)
-    const payloadToSend = { action: SAVE_ACTION, ...payload };
+    // Enviamos los nombres que tu backend espera.
+    // - numPedido: requerido por el Apps Script (segun el error)
+    // - pedido: lo mantenemos por compatibilidad con tu hoja/otros usos
+    const payloadToSend = { action: SAVE_ACTION, numPedido: payload.pedido, pedido: payload.pedido, ...payload };
 
     // UX: deshabilitamos el botón mientras guarda
     els.btnSave.disabled = true;
