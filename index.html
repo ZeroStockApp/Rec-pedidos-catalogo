@@ -190,6 +190,12 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxuQsp71wM3ZMq8
 // Acciones que vamos a intentar para guardar.
 // (Esto hace que el front sea resistente si el backend usa otro nombre de acción.)
 const SAVE_ACTION_CANDIDATES = [
+  // Segun tu backend actual:
+  // - addOne: agregar un pedido
+  // - markSent: marcar como enviado (lo usaremos mas adelante)
+  "addOne",
+
+  // Candidatas anteriores (por si en algun momento renombramos en el backend)
   "savePedido",
   "guardarPedido",
   "save",
