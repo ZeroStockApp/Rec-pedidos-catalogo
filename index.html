@@ -221,7 +221,13 @@ async function postToBackend(action, data){
   // ✅ Tu backend hace JSON.parse del body, pero tambien valida action (addOne / markSent).
   // Para cumplir ambos: enviamos action en la URL y el body como JSON.
   // Usamos Content-Type text/plain para evitar el preflight CORS tipico de Apps Script.
-  const url = `${APPS_SCRIPT_URL}?action=${encodeURIComponent(action)}`;
+  // En algunos Apps Script, los campos se leen desde e.parameter (query/form) y no desde el body.
+  // Por eso enviamos TODO tambien como query params, ademas del body JSON.
+  const qs = new URLSearchParams();
+  qs.set('action', action);
+  Object.entries(data).forEach(([k,v]) => qs.set(k, String(v ?? '')));
+
+  const url = `${APPS_SCRIPT_URL}?${qs.toString()}`;
 
   const res = await fetch(url, {
     method: 'POST',
