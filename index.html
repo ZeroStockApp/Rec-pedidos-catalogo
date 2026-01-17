@@ -134,7 +134,7 @@
       </div>
       <div class="actions">
         <button class="primary" id="btnSave">Guardar pedido</button>
-        <button class="ghost" id="btnPdf">Descargar PDF</button>
+        <button class="ghost" id="btnPdf" type="button">Descargar PDF</button>
         <button class="danger" id="btnClear">Borrar todo</button>
       </div>
     </section>
@@ -472,16 +472,25 @@ async function savePedidoToSheet(data){
   window.delRow=function(i){ if(confirm('¿Eliminar este pedido?')){ rows.splice(i,1); paint(); } };
 
  function toPDF(){
-  if(rows.length===0){ alert('No hay registros'); return; }
+  try{
+    if(rows.length===0){ alert('No hay registros'); return; }
 
-  // ✅ Bloquear PDF si no se eligió quién entrega (antes se podía “colar” en Envío)
-  if(!els.rec.value){
-    alert((currentMode==='Envío') ? 'Selecciona "Enviado por" antes de descargar el PDF.' : 'Selecciona "Recibido por" antes de descargar el PDF.');
-    return;
-  }
+    // ✅ Bloquear PDF si no se eligió quién entrega
+    if(!els.rec.value){
+      alert((currentMode==='Envío') ? 'Selecciona "Enviado por" antes de descargar el PDF.' : 'Selecciona "Recibido por" antes de descargar el PDF.');
+      return;
+    }
 
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: 'landscape' });
+    // ✅ Verificar librerías PDF (evita “botón decorativo” si un CDN falló)
+    const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) ? window.jspdf.jsPDF : (window.jsPDF || null);
+    if(!jsPDFCtor){
+      alert('No se cargó la librería de PDF (jsPDF).
+
+Solución típica: recarga la página (Ctrl+F5). Si persiste, revisamos si el navegador está bloqueando los CDNs.');
+      return;
+    }
+
+    const doc = new jsPDFCtor({ orientation: 'landscape' });
 
   doc.setFontSize(14);
   doc.text('Recepción de Pedidos', 14, 14);
