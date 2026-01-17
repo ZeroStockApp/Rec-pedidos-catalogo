@@ -70,21 +70,21 @@
 <body>
   <div class="container">
     <h1>Recepción de Pedidos</h1>
-    <p class="sub"><span id="gen"></span> | Recibido por: <b id="recibidoTop">(selecciona abajo)</b></p>
+    <p class="sub"><span id="gen"></span> | <span id="roleLabel">Recibido por</span>: <b id="recibidoTop">(selecciona abajo)</b></p>
 
     <section class="card form">
       <h2 style="margin:0 0 10px; font-size:18px">Nuevo pedido</h2>
 
       <!-- Selector de modo (no modifica estilos existentes) -->
       <div class="row">
-  <div class="col-12">
-    <label>Tipo de registro</label>
-    <div style="display:flex;align-items:center;gap:14px">
-      <label><input id="modeRecep" type="radio" name="mode" value="Recepción" checked> Recepción</label>
-      <label><input id="modeEnvio" type="radio" name="mode" value="Envío"> Envío</label>
-    </div>
-  </div>
-</div>
+        <div class="col-12">
+          <label>Tipo de registro</label>
+          <div style="display:flex;align-items:center;gap:14px">
+            <label><input id="modeRecep" type="radio" name="mode" value="Recepción" checked> Recepción</label>
+            <label><input id="modeEnvio" type="radio" name="mode" value="Envío"> Envío</label>
+          </div>
+        </div>
+      </div>
 
       <!-- En modo Envío, se elige una sola vez la distribuidora -->
       <div id="envioBlock" class="row" style="display:none;">
@@ -201,14 +201,13 @@ const REC = [
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxuQsp71wM3ZMq89B5KDlM4jZlPYQaz24oqPGA6s9IC_3VWzFcCZ5ZvA6kGSx889vK00g/exec";
 
 // Tag de version para saber si GitHub esta sirviendo el HTML nuevo
-const BUILD_TAG = "save-addOne-numPedido-v4";
+const BUILD_TAG = "save-addOne-numPedido-v5";
 
-// Acciones que vamos a intentar para guardar.
-// (Esto hace que el front sea resistente si el backend usa otro nombre de acción.)
-// Accion fija para guardar (segun tu backend): addOne
-// (Dejamos de probar multiples acciones para evitar confusiones con el ultimo intento.)
+// Accion fija para guardar (segun tu backend)
 const SAVE_ACTION = "addOne";
 
+// Accion propuesta para consultar pendientes (se implementa en Apps Script)
+const PENDING_ACTION = "getPending";
 
 async function fetchJsonSafe(res){
   const text = await res.text();
@@ -230,12 +229,12 @@ function looksLikeSuccess(payload){
   return false;
 }
 
+function extractId(payload){
+  if(!payload || typeof payload !== 'object') return '';
+  return String(payload.id || payload.rowId || payload.insertId || payload.uuid || '');
+}
+
 async function postToBackend(action, data){
-  // ✅ Tu backend hace JSON.parse del body, pero tambien valida action (addOne / markSent).
-  // Para cumplir ambos: enviamos action en la URL y el body como JSON.
-  // Usamos Content-Type text/plain para evitar el preflight CORS tipico de Apps Script.
-  // En algunos Apps Script, los campos se leen desde e.parameter (query/form) y no desde el body.
-  // Por eso enviamos TODO tambien como query params, ademas del body JSON.
   const qs = new URLSearchParams();
   qs.set('action', action);
   Object.entries(data).forEach(([k,v]) => qs.set(k, String(v ?? '')));
@@ -254,11 +253,20 @@ async function postToBackend(action, data){
   return { ok:false, payload };
 }
 
-async function savePedidoToSheet(data){
-  // Guardar pedido nuevo
-  return await postToBackend(SAVE_ACTION, data);
+async function getFromBackend(action, params){
+  const qs = new URLSearchParams();
+  qs.set('action', action);
+  Object.entries(params || {}).forEach(([k,v]) => qs.set(k, String(v ?? '')));
+
+  const url = `${APPS_SCRIPT_URL}?${qs.toString()}`;
+  const res = await fetch(url, { method: 'GET' });
+  const out = await fetchJsonSafe(res);
+  return out.json ?? out.text;
 }
 
+async function savePedidoToSheet(data){
+  return await postToBackend(SAVE_ACTION, data);
+}
 
   // ===== Referencias UI =====
   const els={
@@ -275,6 +283,7 @@ async function savePedidoToSheet(data){
     btnClear:document.getElementById('btnClear')
   };
   const ui={
+    roleLabel:document.getElementById('roleLabel'),
     modeRecep:document.getElementById('modeRecep'),
     modeEnvio:document.getElementById('modeEnvio'),
     envioBlock:document.getElementById('envioBlock'),
@@ -300,6 +309,8 @@ async function savePedidoToSheet(data){
   function clearTableAndForm(){ rows=[]; paint(); els.numero.value=''; els.vend.value=''; els.paq.value=1; els.dist.selectedIndex=0; }
   function setMode(mode){
     currentMode=mode;
+    if(ui.roleLabel) ui.roleLabel.textContent = (mode==='Envío') ? 'Enviado por' : 'Recibido por';
+
     if(mode==='Envío'){
       ui.envioBlock.style.display='grid';
       els.dist.disabled=true;
@@ -307,45 +318,45 @@ async function savePedidoToSheet(data){
     }else{
       ui.envioBlock.style.display='none';
       els.dist.disabled=false;
-      els.dist.selectedIndex=0; // vuelve al estado original
+      els.dist.selectedIndex=0;
     }
-    // Requisito: al cambiar de modo, limpiar la tabla
     clearTableAndForm();
   }
   ui.modeRecep.addEventListener('change',()=>setMode('Recepción'));
   ui.modeEnvio.addEventListener('change',()=>setMode('Envío'));
   ui.distEnvio.addEventListener('change',()=>{ if(currentMode==='Envío'){ els.dist.value=ui.distEnvio.value||''; }});
 
-  // ===== Envío: cargar pedidos pendientes (Apps Script doGet action=query) =====
+  // ===== Envío: cargar pendientes =====
   function setEnvioStatus(msg){ if(ui.envioStatus) ui.envioStatus.textContent = msg || ''; }
 
-  function normalizeQueryResponse(raw){
-    // Esperado desde Apps Script:
-    // { ok:true, items:[ {id, fecha, numPedido, distribuidora, vendedora, paquetes, enviado} ] }
-    if(!raw) return { ok:false, items:[] };
-    if(typeof raw === 'string'){
-      try{ raw = JSON.parse(raw); }catch(e){ return { ok:false, items:[] }; }
-    }
+  function normalizePendingResponse(raw){
+    if(!raw) return [];
+    // Formatos tolerados:
+    // 1) [ { ... } ]
+    // 2) { data: [ ... ] }
+    // 3) { rows: [ ... ] }
+    // 4) { pending: [ ... ] }
+    if(Array.isArray(raw)) return raw;
     if(typeof raw === 'object'){
-      const items = Array.isArray(raw.items) ? raw.items : [];
-      return { ok: !!raw.ok, items };
+      if(Array.isArray(raw.data)) return raw.data;
+      if(Array.isArray(raw.rows)) return raw.rows;
+      if(Array.isArray(raw.pending)) return raw.pending;
     }
-    return { ok:false, items:[] };
+    return [];
   }
 
-  function mapItemToRow(it){
-    return {
-      id: String(it.id || ''),
-      n: String(it.numPedido || '').trim(),
-      d: String(it.distribuidora || '').trim(),
-      v: String(it.vendedora || '').trim(),
-      q: Number(it.paquetes || 0) || 0,
-    };
+  function mapPendingItemToRow(item, selectedDist){
+    const it = item || {};
+    const id = String(it.id || it.rowId || it.uuid || it.ID || '');
+    const pedido = String(it.pedido || it.numPedido || it.numero || it.n || it.PEDIDO || '').trim();
+    const distribuidora = String(it.distribuidora || it.d || it.DISTRIBUIDORA || selectedDist || '').trim();
+    const vendedora = String(it.vendedora || it.v || it.VENDEDORA || '').trim();
+    const paquetes = Number(it.paquetes ?? it.q ?? it.PAQUETES ?? 0) || 0;
+    return { id, n: pedido, d: distribuidora, v: vendedora, q: paquetes };
   }
 
   async function cargarPendientesEnvio(){
     if(currentMode!=='Envío') return;
-
     const dist = (ui.distEnvio && ui.distEnvio.value) ? ui.distEnvio.value : '';
     if(!dist){ alert('Selecciona una distribuidora (modo Envío).'); return; }
 
@@ -357,41 +368,27 @@ async function savePedidoToSheet(data){
     ui.btnCargar.disabled = true;
 
     try{
-      // Apps Script espera: action=query&distribuidora=...&from=YYYY-MM-DD&to=YYYY-MM-DD
-      const qs = new URLSearchParams();
-      qs.set('action','query');
-      qs.set('distribuidora', dist);
-      qs.set('from', desde);
-      qs.set('to', hasta);
+      const raw = await getFromBackend(PENDING_ACTION, { distribuidora: dist, desde, hasta });
+      const list = normalizePendingResponse(raw);
 
-      const res = await fetch(`${APPS_SCRIPT_URL}?${qs.toString()}`, { method:'GET' });
-      const out = await fetchJsonSafe(res);
-      const raw = out.json ?? out.text;
-
-      const parsed = normalizeQueryResponse(raw);
-      if(!parsed.ok){
-        console.warn('[query pendientes] respuesta', raw);
-        setEnvioStatus('No se pudo cargar (respuesta inválida).');
-        alert('No se pudo cargar pendientes. Revisa que la Web App esté desplegada y accesible.');
-        return;
-      }
-
-      const list = parsed.items || [];
-      if(!list.length){
+      if(!Array.isArray(list) || list.length===0){
+        setEnvioStatus('No hay pedidos pendientes en ese rango.');
         rows = [];
         paint();
-        setEnvioStatus('No hay pedidos pendientes en ese rango.');
         return;
       }
 
-      rows = list.map(mapItemToRow).filter(r => r.n);
+      rows = list
+        .map(x => mapPendingItemToRow(x, dist))
+        .filter(r => r.n);
+
       paint();
       setEnvioStatus(`Listo: ${rows.length} pedido(s) cargado(s).`);
 
     }catch(e){
       console.error('[cargarPendientesEnvio]', e);
-      setEnvioStatus('Error al cargar pendientes.');
-      alert('Error al cargar pendientes desde el backend.');
+      setEnvioStatus('No se pudo cargar. Falta implementar doGet/action en Apps Script.');
+      alert('No se pudo cargar pendientes desde el backend.\n\nSiguiente paso: implementar doGet (action=getPending) en Apps Script.');
     }finally{
       ui.btnCargar.disabled = false;
     }
@@ -401,14 +398,12 @@ async function savePedidoToSheet(data){
     ui.btnCargar.addEventListener('click', cargarPendientesEnvio);
   }
 
-
   // ===== CRUD =====
   async function save(){
     const distValue=(currentMode==='Envío')?ui.distEnvio.value:els.dist.value;
     if(!els.numero.value||!distValue||!els.vend.value||!els.rec.value||!els.paq.value){alert('Completa todos los campos');return;}
 
-    // Datos base (los que ya manejas)
-    const data={
+    const dataBase={
       id: (editIndex>-1 && rows[editIndex] && rows[editIndex].id) ? rows[editIndex].id : '',
       n:els.numero.value.trim(),
       d:distValue,
@@ -416,27 +411,20 @@ async function savePedidoToSheet(data){
       q:Number(els.paq.value)
     };
 
-    // 🔗 Datos para el Google Sheet (coinciden con tu estructura: FECHA, PEDIDO, DISTRIBUIDORA, VENDEDORA, PAQUETES, ENVIADO)
-    // Nota: ENVIADO lo dejamos en "NO" por defecto. Luego, en el flujo de Envío lo marcaremos como "SI".
     const payload={
-      id: (editIndex>-1 && rows[editIndex] && rows[editIndex].id) ? rows[editIndex].id : '',
+      id: dataBase.id,
       fecha: new Date().toISOString(),
-      pedido: data.n,
-      distribuidora: data.d,
-      vendedora: data.v,
-      paquetes: data.q,
+      pedido: dataBase.n,
+      distribuidora: dataBase.d,
+      vendedora: dataBase.v,
+      paquetes: dataBase.q,
       recibidoPor: els.rec.value,
       enviado: 'NO',
       modo: currentMode
     };
 
-    // 👇 Para el backend, enviamos action solo por URL (asi lo pide el Apps Script)
-    // Enviamos los nombres que tu backend espera.
-    // - numPedido: requerido por el Apps Script (segun el error)
-    // - pedido: lo mantenemos por compatibilidad con tu hoja/otros usos
     const payloadToSend = { action: SAVE_ACTION, numPedido: payload.pedido, pedido: payload.pedido, ...payload };
 
-    // UX: deshabilitamos el botón mientras guarda
     els.btnSave.disabled = true;
     els.btnSave.textContent = 'Guardando…';
 
@@ -449,30 +437,17 @@ async function savePedidoToSheet(data){
     els.btnSave.textContent = 'Guardar pedido';
 
     if(!result || !result.ok){
-      // Mostramos lo que respondió el backend para que lo ajustemos sin adivinar
       const msg = (result && result.payload) ? (typeof result.payload === 'string' ? result.payload : JSON.stringify(result.payload)) : 'Error desconocido';
       const urlPreview = `${APPS_SCRIPT_URL}?action=${encodeURIComponent(SAVE_ACTION)}&numPedido=${encodeURIComponent(payloadToSend.numPedido ?? '')}`;
-      alert(`No se pudo guardar en Google Sheets.
-
-Detalle:
-${msg}
-
-BUILD_TAG: ${BUILD_TAG}
-
-Payload enviado (resumen):
-numPedido=${payloadToSend.numPedido}
-pedido=${payloadToSend.pedido}
-
-URL preview (deberia incluir numPedido):
-${urlPreview}`);
+      alert(`No se pudo guardar en Google Sheets.\n\nDetalle:\n${msg}\n\nBUILD_TAG: ${BUILD_TAG}\n\nPayload enviado (resumen):\nnumPedido=${payloadToSend.numPedido}\npedido=${payloadToSend.pedido}\n\nURL preview (deberia incluir numPedido):\n${urlPreview}`);
       return;
     }
 
-    // ✅ Si el backend guardó OK, guardamos también el ID que devuelve (para markSent en modo Envío)
-    const returnedId = (result && result.payload && typeof result.payload === 'object' && result.payload.id) ? String(result.payload.id) : '';
-    const dataToStore = { ...data, id: data.id || returnedId };
+    // ✅ Intentamos capturar el id retornado por el backend para que markSent funcione
+    const returnedId = extractId(result.payload);
+    const data = { ...dataBase, id: dataBase.id || returnedId };
 
-    if(editIndex>-1){ rows[editIndex]=dataToStore; editIndex=-1; } else { rows.push(dataToStore); }
+    if(editIndex>-1){ rows[editIndex]=data; editIndex=-1; } else { rows.push(data); }
     els.recibidoTop.textContent=els.rec.value;
     els.numero.value=''; els.vend.value=''; els.paq.value=1; if(currentMode==='Recepción'){ els.dist.selectedIndex=0; }
     paint();
@@ -499,33 +474,36 @@ ${urlPreview}`);
  function toPDF(){
   if(rows.length===0){ alert('No hay registros'); return; }
 
+  // ✅ Bloquear PDF si no se eligió quién entrega (antes se podía “colar” en Envío)
+  if(!els.rec.value){
+    alert((currentMode==='Envío') ? 'Selecciona "Enviado por" antes de descargar el PDF.' : 'Selecciona "Recibido por" antes de descargar el PDF.');
+    return;
+  }
+
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'landscape' });
 
-  // Encabezado
   doc.setFontSize(14);
   doc.text('Recepción de Pedidos', 14, 14);
   doc.setFontSize(10);
-  doc.text(`Generado: ${new Date().toLocaleString('es-CL')} | Recibido por: ${els.recibidoTop.textContent}`, 14, 20);
+  const whoLabel = (isEnvio ? 'Enviado por' : 'Recibido por');
+  const whoValue = els.rec.value || els.recibidoTop.textContent;
+  doc.text(`Generado: ${new Date().toLocaleString('es-CL')} | ${whoLabel}: ${whoValue}`, 14, 20);
 
   const isEnvio = (typeof currentMode !== 'undefined' && currentMode === 'Envío');
 
-  // Si es Envío, muestra una sola vez la distribuidora en el encabezado
   if (isEnvio && ui.distEnvio && ui.distEnvio.value) {
     doc.setFont(undefined, 'bold');
     doc.text(`Distribuidora: ${ui.distEnvio.value}`, 14, 26);
-    doc.setFont(undefined, 'normal'); // volver a normal para el resto
+    doc.setFont(undefined, 'normal');
   }
 
-  // ==== Tabla ====
   let head, body, startY = isEnvio ? 32 : 26;
 
   if (isEnvio) {
-    // SIN columna Distribuidora, SIN columna de firma por fila
     head = [[ '#','Nº\npedido','Vendedora','Nº\npaq' ]];
     body = rows.map((r,i)=>[ i+1, r.n, r.v, r.q ]);
   } else {
-    // Recepción: todo como lo tenías (con firma por fila, entregado por, etc.)
     head = [[ '#','Nº\npedido','Distribuidora','Vendedora','Nº\npaq','Firma distribuidora','Entregado por','Fecha\nentrega','R' ]];
     body = rows.map((r,i)=>[ i+1, r.n, shortDist(r.d), r.v, r.q, '', '', '', '' ]);
   }
@@ -537,14 +515,12 @@ ${urlPreview}`);
     headStyles:{ fillColor:[19,111,99], textColor:255, halign:'center' },
     alternateRowStyles:{ fillColor:[243,249,247] },
     columnStyles: isEnvio
-  // Envio: distribuimos el ancho para que la tabla llene la pagina
   ? { 
-      0:{cellWidth:12},   // #
-      1:{cellWidth:40},   // Nº pedido
-      2:{cellWidth:160},  // Vendedora (más ancho)
-      3:{cellWidth:25}    // Nº paq
+      0:{cellWidth:12},
+      1:{cellWidth:40},
+      2:{cellWidth:160},
+      3:{cellWidth:25}
     }
-  // Recepción: lo de siempre
   : { 
       0:{cellWidth:10}, 1:{cellWidth:22}, 2:{cellWidth:44},
       3:{cellWidth:68}, 4:{cellWidth:14}, 8:{cellWidth:10}
@@ -553,7 +529,6 @@ ${urlPreview}`);
     margin: { left: 14, right: 14 },
 
     didDrawCell: isEnvio ? undefined : function(data){
-      // Solo en Recepción dibuja la casilla de verificación (columna R)
       if(data.section==='body' && data.column.index===8){
         const size = 5;
         const x = data.cell.x + (data.cell.width - size)/2;
@@ -564,7 +539,6 @@ ${urlPreview}`);
     }
   });
 
-  // ==== Bloque de firma único (solo para Envío) ====
   if (isEnvio) {
     let y = (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY + 12 : 40;
 
@@ -573,21 +547,18 @@ ${urlPreview}`);
 
     doc.setFontSize(10);
     const leyenda = 'Declaro haber recibido conforme los paquetes detallados en este informe.';
-    doc.text(doc.splitTextToSize(leyenda, 250), 14, y); 
+    doc.text(doc.splitTextToSize(leyenda, 250), 14, y);
     y += 18;
 
-    // Línea para firma
-    doc.line(14, y, 95, y); 
+    doc.line(14, y, 95, y);
     doc.text('Firma y Rut de la distribuidora', 14, y + 5);
 
-    // Línea para fecha
     doc.line(120, y, 190, y);
     doc.text('Fecha', 120, y + 5);
   }
 
   doc.save('recepcion_pedidos.pdf');
 
-  // ✅ En modo Envío: marcar como enviados en Google Sheets (para que no vuelvan a aparecer)
   if (isEnvio) {
     try {
       const ids = rows.map(r=>r.id).filter(Boolean);
@@ -600,20 +571,23 @@ ${urlPreview}`);
         });
       }
     } catch (e) {
-      // Si falla el marcado, no bloqueamos el PDF. Mostramos alerta para revisar.
       alert('PDF generado, pero no se pudo marcar como ENVIADO en Sheets.');
     }
   }
 
-  // Limpiar tabla después de generar el PDF (como acordamos)
   rows = [];
   paint();
 }
 
   // ===== Listeners =====
-  els.btnSave.onclick=save; 
-  els.btnClear.onclick=()=>{ if(confirm('¿Eliminar todo?')){ rows=[]; paint(); } }; 
+  els.btnSave.onclick=save;
+  els.btnClear.onclick=()=>{ if(confirm('¿Eliminar todo?')){ rows=[]; paint(); } };
   els.btnPdf.onclick=toPDF;
+
+  // Mantener el nombre seleccionado arriba (sirve sobre todo para Envío)
+  els.rec.addEventListener('change',()=>{
+    els.recibidoTop.textContent = els.rec.value || '(selecciona abajo)';
+  });
 
   // Navegación con Enter
   els.numero.addEventListener('keypress',function(e){ if(e.key==='Enter'){ e.preventDefault(); (currentMode==='Envío'? els.vend : els.dist).focus(); }});
@@ -622,7 +596,6 @@ ${urlPreview}`);
   els.rec.addEventListener('keypress',function(e){ if(e.key==='Enter'){ e.preventDefault(); els.paq.focus(); }});
   els.paq.addEventListener('keypress',function(e){ if(e.key==='Enter'){ e.preventDefault(); els.btnSave.focus(); }});
 
-  // Init
   window.addEventListener('DOMContentLoaded', init);
 })();
 </script>
