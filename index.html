@@ -484,8 +484,7 @@ async function savePedidoToSheet(data){
     // Verificar librerías PDF
     const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) ? window.jspdf.jsPDF : (window.jsPDF || null);
     if(!jsPDFCtor){
-      alert('No se cargó la librería de PDF (jsPDF).
-Si persiste, puede ser bloqueo del CDN por red/extensión.');
+      alert('No se cargó la librería de PDF (jsPDF).\nSi persiste, puede ser bloqueo del CDN por red/extensión.');
       return;
     }
 
@@ -520,9 +519,7 @@ Si persiste, puede ser bloqueo del CDN por red/extensión.');
 
     // Asegurar autoTable
     if(typeof doc.autoTable !== 'function'){
-      alert('No se cargó la librería de tablas (autoTable).
-
-Prueba: recargar con Ctrl+F5.');
+      alert('No se cargó la librería de tablas (autoTable).\nPrueba: recargar con Ctrl+F5.');
       return;
     }
 
@@ -589,12 +586,10 @@ Prueba: recargar con Ctrl+F5.');
     paint();
 
   }catch(err){
-    console.error('[toPDF]', err);
-    alert('Ocurrió un error al generar el PDF.
-
-Abre la consola (F12) y revisamos el detalle si se repite.');
-  }
+  console.error('[toPDF]', err);
+  alert('Ocurrió un error al generar el PDF.\nAbre la consola (F12) y revisamos el detalle si se repite.');
 }
+
 
   // ===== Listeners =====
   els.btnSave.onclick=save;
