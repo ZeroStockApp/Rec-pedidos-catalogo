@@ -207,7 +207,9 @@ const BUILD_TAG = "save-addOne-numPedido-v5";
 const SAVE_ACTION = "addOne";
 
 // Accion propuesta para consultar pendientes (se implementa en Apps Script)
-const PENDING_ACTION = "getPending";
+// En tu Apps Script, por lo visto doGet solo acepta action=ping o action=query.
+// Usamos query para traer pendientes (enviado=FALSE) filtrando por distribuidora y rango.
+const PENDING_ACTION = "query";
 
 async function fetchJsonSafe(res){
   const text = await res.text();
@@ -389,15 +391,28 @@ async function savePedidoToSheet(data){
 
     try{
             // Enviamos varios nombres de parámetro por compatibilidad con el Apps Script
-      const raw = await getFromBackend(PENDING_ACTION, {
+            const raw = await getFromBackend(PENDING_ACTION, {
+        // filtros principales
         distribuidora: dist,
         dist,
         d: dist,
         desde,
         hasta,
         start: desde,
-        end: hasta
+        end: hasta,
+
+        // pendientes = no enviados (por compatibilidad)
+        enviado: 'FALSE',
+        ENVIADO: 'FALSE',
+        sent: 'FALSE',
+        pending: 'true',
+
+        // metadatos opcionales
+        sheet: 'Pedidos',
+        modo: 'Envío'
       });
+
+      console.log('[Pendientes raw]', raw);
 
       console.log('[Pendientes raw]', raw);
       const list = normalizePendingResponse(raw);
