@@ -485,7 +485,6 @@ async function savePedidoToSheet(data){
     const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) ? window.jspdf.jsPDF : (window.jsPDF || null);
     if(!jsPDFCtor){
       alert('No se cargó la librería de PDF (jsPDF).\nSi persiste, puede ser bloqueo del CDN por red/extensión.');
-Si persiste, puede ser bloqueo del CDN por red/extensión.');
       return;
     }
     if(typeof doc === 'undefined'){
