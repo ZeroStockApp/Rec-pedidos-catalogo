@@ -484,9 +484,7 @@ async function savePedidoToSheet(data){
     // Verificar librerías PDF
     const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) ? window.jspdf.jsPDF : (window.jsPDF || null);
     if(!jsPDFCtor){
-alert('No se cargó la librería de PDF (jsPDF).\n\nPrueba: recargar con Ctrl+F5.\nSi persiste, puede ser bloqueo del CDN por red/extensión.');
-
-Prueba: recargar con Ctrl+F5.
+      alert('No se cargó la librería de PDF (jsPDF).
 Si persiste, puede ser bloqueo del CDN por red/extensión.');
       return;
     }
@@ -515,15 +513,10 @@ Si persiste, puede ser bloqueo del CDN por red/extensión.');
     let head, body, startY = isEnvio ? 32 : 26;
 
     if (isEnvio) {
-      head = [[ '#','Nº
-pedido','Vendedora','Nº
-paq' ]];
+      head = [[ '#','Nº\npedido','Vendedora','Nº\npaq' ]];
       body = rows.map((r,i)=>[ i+1, r.n, r.v, r.q ]);
     } else {
-      head = [[ '#','Nº
-pedido','Distribuidora','Vendedora','Nº
-paq','Firma distribuidora','Entregado por','Fecha
-entrega','R' ]];
+      head = [[ '#','Nº\npedido','Distribuidora','Vendedora','Nº\npaq','Firma distribuidora','Entregado por','Fecha\nentrega','R' ]];
       body = rows.map((r,i)=>[ i+1, r.n, shortDist(r.d), r.v, r.q, '', '', '', '' ]);
     }
 
