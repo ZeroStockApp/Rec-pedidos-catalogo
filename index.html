@@ -330,13 +330,38 @@ async function savePedidoToSheet(data){
   function setEnvioStatus(msg){ if(ui.envioStatus) ui.envioStatus.textContent = msg || ''; }
 
   function normalizePendingResponse(raw){
-    if(!raw) return [];
-    if(Array.isArray(raw)) return raw;
-    if(typeof raw === 'object'){
-      if(Array.isArray(raw.data)) return raw.data;
-      if(Array.isArray(raw.rows)) return raw.rows;
-      if(Array.isArray(raw.pending)) return raw.pending;
+    // Backend puede devolver: Array, {data:[...]}, {rows:[...]}, o JSON como string
+    if(raw == null) return [];
+
+    // 1) Si viene como string, intentamos parsear JSON
+    if(typeof raw === 'string'){
+      const t = raw.trim();
+      if((t.startsWith('[') && t.endsWith(']')) || (t.startsWith('{') && t.endsWith('}'))){
+        try{ raw = JSON.parse(t); }
+        catch{ return []; }
+      }else{
+        return [];
+      }
     }
+
+    // 2) Si ya es array
+    if(Array.isArray(raw)) return raw;
+
+    // 3) Si es objeto, buscar contenedores típicos
+    if(typeof raw === 'object'){
+      const candidates = [raw.data, raw.rows, raw.pending, raw.items, raw.result];
+      for(const c of candidates){
+        if(Array.isArray(c)) return c;
+        if(typeof c === 'string'){
+          const tt = c.trim();
+          if(tt.startsWith('[') && tt.endsWith(']')){
+            try{ const parsed = JSON.parse(tt); if(Array.isArray(parsed)) return parsed; }
+            catch{}
+          }
+        }
+      }
+    }
+
     return [];
   }
 
@@ -363,7 +388,18 @@ async function savePedidoToSheet(data){
     ui.btnCargar.disabled = true;
 
     try{
-      const raw = await getFromBackend(PENDING_ACTION, { distribuidora: dist, desde, hasta });
+            // Enviamos varios nombres de parámetro por compatibilidad con el Apps Script
+      const raw = await getFromBackend(PENDING_ACTION, {
+        distribuidora: dist,
+        dist,
+        d: dist,
+        desde,
+        hasta,
+        start: desde,
+        end: hasta
+      });
+
+      console.log('[Pendientes raw]', raw);
       const list = normalizePendingResponse(raw);
 
       if(!Array.isArray(list) || list.length===0){
