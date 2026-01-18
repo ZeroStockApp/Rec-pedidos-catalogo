@@ -374,7 +374,30 @@ async function savePedidoToSheet(data){
     const distribuidora = String(it.distribuidora || it.d || it.DISTRIBUIDORA || selectedDist || '').trim();
     const vendedora = String(it.vendedora || it.v || it.VENDEDORA || '').trim();
     const paquetes = Number(it.paquetes ?? it.q ?? it.PAQUETES ?? 0) || 0;
-    return { id, n: pedido, d: distribuidora, v: vendedora, q: paquetes };
+      
+    // ---- FECHA (para filtrar por Desde / Hasta) ----
+  const rawFecha = it.fecha || it.FECHA || it['FECHA'] || it.timestamp || it.time || '';
+  let fechaISO = '';
+
+  if(rawFecha && typeof rawFecha === 'string'){
+    const t = rawFecha.trim();
+
+    // formato ISO: 2026-01-17...
+    if (/^\d{4}-\d{2}-\d{2}/.test(t)) {
+      fechaISO = t.slice(0, 10);
+    } else {
+      // formato dd/mm/yyyy ...
+      const m = t.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if (m) {
+        const dd = String(m[1]).padStart(2, '0');
+        const mm = String(m[2]).padStart(2, '0');
+        const yy = m[3];
+        fechaISO = `${yy}-${mm}-${dd}`;
+      }
+    }
+  }
+
+    return { id, n: pedido, d: distribuidora, v: vendedora, q: paquetes, fecha: fechaISO };
   }
 
   async function cargarPendientesEnvio(){
@@ -412,7 +435,6 @@ async function savePedidoToSheet(data){
         modo: 'Envío'
       });
 
-      console.log('[Pendientes raw]', raw);
 
       console.log('[Pendientes raw]', raw);
       const list = normalizePendingResponse(raw);
@@ -427,6 +449,12 @@ async function savePedidoToSheet(data){
       rows = list
         .map(x => mapPendingItemToRow(x, dist))
         .filter(r => r.n);
+
+      // ✅ Filtro real por rango de fechas (inclusive)
+rows = rows.filter(r => {
+  if(!r.fecha) return true; // si no vino fecha, no lo descartamos
+  return r.fecha >= desde && r.fecha <= hasta;
+});
 
       paint();
       setEnvioStatus(`Listo: ${rows.length} pedido(s) cargado(s).`);
