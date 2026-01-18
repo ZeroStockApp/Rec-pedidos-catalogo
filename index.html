@@ -207,9 +207,7 @@ const BUILD_TAG = "save-addOne-numPedido-v5";
 const SAVE_ACTION = "addOne";
 
 // Accion propuesta para consultar pendientes (se implementa en Apps Script)
-// En tu Apps Script, por lo visto doGet solo acepta action=ping o action=query.
-// Usamos query para traer pendientes (enviado=FALSE) filtrando por distribuidora y rango.
-const PENDING_ACTION = "query";
+const PENDING_ACTION = "getPending";
 
 async function fetchJsonSafe(res){
   const text = await res.text();
@@ -332,38 +330,18 @@ async function savePedidoToSheet(data){
   function setEnvioStatus(msg){ if(ui.envioStatus) ui.envioStatus.textContent = msg || ''; }
 
   function normalizePendingResponse(raw){
-    // Backend puede devolver: Array, {data:[...]}, {rows:[...]}, o JSON como string
-    if(raw == null) return [];
-
-    // 1) Si viene como string, intentamos parsear JSON
-    if(typeof raw === 'string'){
-      const t = raw.trim();
-      if((t.startsWith('[') && t.endsWith(']')) || (t.startsWith('{') && t.endsWith('}'))){
-        try{ raw = JSON.parse(t); }
-        catch{ return []; }
-      }else{
-        return [];
-      }
-    }
-
-    // 2) Si ya es array
+    if(!raw) return [];
+    // Formatos tolerados:
+    // 1) [ { ... } ]
+    // 2) { data: [ ... ] }
+    // 3) { rows: [ ... ] }
+    // 4) { pending: [ ... ] }
     if(Array.isArray(raw)) return raw;
-
-    // 3) Si es objeto, buscar contenedores típicos
     if(typeof raw === 'object'){
-      const candidates = [raw.data, raw.rows, raw.pending, raw.items, raw.result];
-      for(const c of candidates){
-        if(Array.isArray(c)) return c;
-        if(typeof c === 'string'){
-          const tt = c.trim();
-          if(tt.startsWith('[') && tt.endsWith(']')){
-            try{ const parsed = JSON.parse(tt); if(Array.isArray(parsed)) return parsed; }
-            catch{}
-          }
-        }
-      }
+      if(Array.isArray(raw.data)) return raw.data;
+      if(Array.isArray(raw.rows)) return raw.rows;
+      if(Array.isArray(raw.pending)) return raw.pending;
     }
-
     return [];
   }
 
@@ -374,30 +352,7 @@ async function savePedidoToSheet(data){
     const distribuidora = String(it.distribuidora || it.d || it.DISTRIBUIDORA || selectedDist || '').trim();
     const vendedora = String(it.vendedora || it.v || it.VENDEDORA || '').trim();
     const paquetes = Number(it.paquetes ?? it.q ?? it.PAQUETES ?? 0) || 0;
-      
-    // ---- FECHA (para filtrar por Desde / Hasta) ----
-  const rawFecha = it.fecha || it.FECHA || it['FECHA'] || it.timestamp || it.time || '';
-  let fechaISO = '';
-
-  if(rawFecha && typeof rawFecha === 'string'){
-    const t = rawFecha.trim();
-
-    // formato ISO: 2026-01-17...
-    if (/^\d{4}-\d{2}-\d{2}/.test(t)) {
-      fechaISO = t.slice(0, 10);
-    } else {
-      // formato dd/mm/yyyy ...
-      const m = t.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-      if (m) {
-        const dd = String(m[1]).padStart(2, '0');
-        const mm = String(m[2]).padStart(2, '0');
-        const yy = m[3];
-        fechaISO = `${yy}-${mm}-${dd}`;
-      }
-    }
-  }
-
-    return { id, n: pedido, d: distribuidora, v: vendedora, q: paquetes, fecha: fechaISO };
+    return { id, n: pedido, d: distribuidora, v: vendedora, q: paquetes };
   }
 
   async function cargarPendientesEnvio(){
@@ -413,30 +368,7 @@ async function savePedidoToSheet(data){
     ui.btnCargar.disabled = true;
 
     try{
-            // Enviamos varios nombres de parámetro por compatibilidad con el Apps Script
-            const raw = await getFromBackend(PENDING_ACTION, {
-        // filtros principales
-        distribuidora: dist,
-        dist,
-        d: dist,
-        desde,
-        hasta,
-        start: desde,
-        end: hasta,
-
-        // pendientes = no enviados (por compatibilidad)
-        enviado: 'FALSE',
-        ENVIADO: 'FALSE',
-        sent: 'FALSE',
-        pending: 'true',
-
-        // metadatos opcionales
-        sheet: 'Pedidos',
-        modo: 'Envío'
-      });
-
-
-      console.log('[Pendientes raw]', raw);
+      const raw = await getFromBackend(PENDING_ACTION, { distribuidora: dist, desde, hasta });
       const list = normalizePendingResponse(raw);
 
       if(!Array.isArray(list) || list.length===0){
@@ -449,12 +381,6 @@ async function savePedidoToSheet(data){
       rows = list
         .map(x => mapPendingItemToRow(x, dist))
         .filter(r => r.n);
-
-      // ✅ Filtro real por rango de fechas (inclusive)
-rows = rows.filter(r => {
-  if(!r.fecha) return true; // si no vino fecha, no lo descartamos
-  return r.fecha >= desde && r.fecha <= hasta;
-});
 
       paint();
       setEnvioStatus(`Listo: ${rows.length} pedido(s) cargado(s).`);
@@ -545,126 +471,127 @@ rows = rows.filter(r => {
   window.editRow=function(i){ const r=rows[i]; els.numero.value=r.n; els.dist.value=r.d; els.vend.value=r.v; els.paq.value=r.q; editIndex=i; if(currentMode==='Envío'){ ui.distEnvio.value=r.d; } };
   window.delRow=function(i){ if(confirm('¿Eliminar este pedido?')){ rows.splice(i,1); paint(); } };
 
-  // ✅ FIX PDF: jsPDF 2.5.x puede fallar con setFont(undefined, 'bold')
-  //    (en algunas versiones arroja error). Dejamos fuente explícita para no romper.
-  function toPDF(){
-    try{
-      if(rows.length===0){ alert('No hay registros'); return; }
+ function toPDF(){
+  try{
+    if(rows.length===0){ alert('No hay registros'); return; }
 
-      // Bloquear PDF si no se eligió quién entrega
-      if(!els.rec.value){
-        alert((currentMode==='Envío') ? 'Selecciona "Enviado por" antes de descargar el PDF.' : 'Selecciona "Recibido por" antes de descargar el PDF.');
-        return;
+    // Bloquear PDF si no se eligió quién entrega
+    if(!els.rec.value){
+      alert((currentMode==='Envío') ? 'Selecciona "Enviado por" antes de descargar el PDF.' : 'Selecciona "Recibido por" antes de descargar el PDF.');
+      return;
+    }
+
+    // Verificar librerías PDF
+    const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) ? window.jspdf.jsPDF : (window.jsPDF || null);
+    if(!jsPDFCtor){
+      alert('No se cargó la librería de PDF (jsPDF).\nSi persiste, puede ser bloqueo del CDN por red/extensión.');
+      return;
+    }
+    if(typeof doc === 'undefined'){
+      // no-op (evitar linter)
+    }
+
+    const doc = new jsPDFCtor({ orientation: 'landscape' });
+
+    doc.setFontSize(14);
+    doc.text('Recepción de Pedidos', 14, 14);
+
+    const isEnvio = (typeof currentMode !== 'undefined' && currentMode === 'Envío');
+    const whoLabel = (isEnvio ? 'Enviado por' : 'Recibido por');
+    const whoValue = els.rec.value || els.recibidoTop.textContent;
+
+    doc.setFontSize(10);
+    doc.text(`Generado: ${new Date().toLocaleString('es-CL')} | ${whoLabel}: ${whoValue}`, 14, 20);
+
+    if (isEnvio && ui.distEnvio && ui.distEnvio.value) {
+      doc.setFont(undefined, 'bold');
+      doc.text(`Distribuidora: ${ui.distEnvio.value}`, 14, 26);
+      doc.setFont(undefined, 'normal');
+    }
+
+    let head, body, startY = isEnvio ? 32 : 26;
+
+    if (isEnvio) {
+      head = [[ '#','Nº\npedido','Vendedora','Nº\npaq' ]];
+      body = rows.map((r,i)=>[ i+1, r.n, r.v, r.q ]);
+    } else {
+      head = [[ '#','Nº\npedido','Distribuidora','Vendedora','Nº\npaq','Firma distribuidora','Entregado por','Fecha\nentrega','R' ]];
+      body = rows.map((r,i)=>[ i+1, r.n, shortDist(r.d), r.v, r.q, '', '', '', '' ]);
+    }
+
+    // Asegurar autoTable
+    if(typeof doc.autoTable !== 'function'){
+      alert('No se cargó la librería de tablas (autoTable).\nPrueba: recargar con Ctrl+F5.');
+return;
+    }
+
+    doc.autoTable({
+      head, body, startY,
+      theme:'grid',
+      styles:{ fontSize:9, cellPadding:3, lineColor:[0,0,0], lineWidth:0.2, halign:'center', valign:'middle' },
+      headStyles:{ fillColor:[19,111,99], textColor:255, halign:'center' },
+      alternateRowStyles:{ fillColor:[243,249,247] },
+      columnStyles: isEnvio
+        ? { 0:{cellWidth:12}, 1:{cellWidth:40}, 2:{cellWidth:160}, 3:{cellWidth:25} }
+        : { 0:{cellWidth:10}, 1:{cellWidth:22}, 2:{cellWidth:44}, 3:{cellWidth:68}, 4:{cellWidth:14}, 8:{cellWidth:10} },
+      tableWidth: 'auto',
+      margin: { left: 14, right: 14 },
+      didDrawCell: isEnvio ? undefined : function(data){
+        if(data.section==='body' && data.column.index===8){
+          const size = 5;
+          const x = data.cell.x + (data.cell.width - size)/2;
+          const y = data.cell.y + (data.cell.height - size)/2;
+          doc.setLineWidth(0.4);
+          doc.rect(x, y, size, size);
+        }
       }
+    });
 
-      // Verificar librerías PDF
-      const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) ? window.jspdf.jsPDF : (window.jsPDF || null);
-      if(!jsPDFCtor){
-        alert('No se cargó la librería de PDF (jsPDF).\nSi persiste, puede ser bloqueo del CDN por red/extensión.');
-        return;
-      }
+    if (isEnvio) {
+      let y = (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY + 12 : 40;
 
-      const doc = new jsPDFCtor({ orientation: 'landscape' });
-
-      doc.setFontSize(14);
-      doc.text('Recepción de Pedidos', 14, 14);
-
-      const isEnvio = (typeof currentMode !== 'undefined' && currentMode === 'Envío');
-      const whoLabel = (isEnvio ? 'Enviado por' : 'Recibido por');
-      const whoValue = els.rec.value || els.recibidoTop.textContent;
+      doc.setFontSize(11);
+      doc.text('Confirmación de recepción:', 14, y); y += 8;
 
       doc.setFontSize(10);
-      doc.text(`Generado: ${new Date().toLocaleString('es-CL')} | ${whoLabel}: ${whoValue}`, 14, 20);
+      const leyenda = 'Declaro haber recibido conforme los paquetes detallados en este informe.';
+      doc.text(doc.splitTextToSize(leyenda, 250), 14, y);
+      y += 18;
 
-      if (isEnvio && ui.distEnvio && ui.distEnvio.value) {
-        doc.setFont('helvetica', 'bold');
-        doc.text(`Distribuidora: ${ui.distEnvio.value}`, 14, 26);
-        doc.setFont('helvetica', 'normal');
-      }
+      doc.line(14, y, 95, y);
+      doc.text('Firma y Rut de la distribuidora', 14, y + 5);
 
-      let head, body, startY = isEnvio ? 32 : 26;
-
-      if (isEnvio) {
-        head = [[ '#','Nº\npedido','Vendedora','Nº\npaq' ]];
-        body = rows.map((r,i)=>[ i+1, r.n, r.v, r.q ]);
-      } else {
-        head = [[ '#','Nº\npedido','Distribuidora','Vendedora','Nº\npaq','Firma distribuidora','Entregado por','Fecha\nentrega','R' ]];
-        body = rows.map((r,i)=>[ i+1, r.n, shortDist(r.d), r.v, r.q, '', '', '', '' ]);
-      }
-
-      // Asegurar autoTable
-      if(typeof doc.autoTable !== 'function'){
-        alert('No se cargó la librería de tablas (autoTable).\nPrueba: recargar con Ctrl+F5.');
-        return;
-      }
-
-      doc.autoTable({
-        head, body, startY,
-        theme:'grid',
-        styles:{ fontSize:9, cellPadding:3, lineColor:[0,0,0], lineWidth:0.2, halign:'center', valign:'middle' },
-        headStyles:{ fillColor:[19,111,99], textColor:255, halign:'center' },
-        alternateRowStyles:{ fillColor:[243,249,247] },
-        columnStyles: isEnvio
-          ? { 0:{cellWidth:12}, 1:{cellWidth:40}, 2:{cellWidth:160}, 3:{cellWidth:25} }
-          : { 0:{cellWidth:10}, 1:{cellWidth:22}, 2:{cellWidth:44}, 3:{cellWidth:68}, 4:{cellWidth:14}, 8:{cellWidth:10} },
-        tableWidth: 'auto',
-        margin: { left: 14, right: 14 },
-        didDrawCell: isEnvio ? undefined : function(data){
-          if(data.section==='body' && data.column.index===8){
-            const size = 5;
-            const x = data.cell.x + (data.cell.width - size)/2;
-            const y = data.cell.y + (data.cell.height - size)/2;
-            doc.setLineWidth(0.4);
-            doc.rect(x, y, size, size);
-          }
-        }
-      });
-
-      if (isEnvio) {
-        let y = (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY + 12 : 40;
-
-        doc.setFontSize(11);
-        doc.text('Confirmación de recepción:', 14, y); y += 8;
-
-        doc.setFontSize(10);
-        const leyenda = 'Declaro haber recibido conforme los paquetes detallados en este informe.';
-        doc.text(doc.splitTextToSize(leyenda, 250), 14, y);
-        y += 18;
-
-        doc.line(14, y, 95, y);
-        doc.text('Firma y Rut de la distribuidora', 14, y + 5);
-
-        doc.line(120, y, 190, y);
-        doc.text('Fecha', 120, y + 5);
-      }
-
-      doc.save('recepcion_pedidos.pdf');
-
-      // En modo Envío, marcar enviados (no bloquea el PDF)
-      if (isEnvio) {
-        try {
-          const ids = rows.map(r=>r.id).filter(Boolean);
-          if (ids.length) {
-            const payload = { action: 'markSent', ids, envioId: `ENV-${new Date().toISOString().slice(0,10)}` };
-            fetch(APPS_SCRIPT_URL, {
-              method: 'POST',
-              headers: { 'Content-Type':'text/plain;charset=utf-8' },
-              body: JSON.stringify(payload)
-            });
-          }
-        } catch (e) {
-          alert('PDF generado, pero no se pudo marcar como ENVIADO en Sheets.');
-        }
-      }
-
-      rows = [];
-      paint();
-
-    }catch(err){
-      console.error('[toPDF]', err);
-      alert('Ocurrió un error al generar el PDF.\nAbre la consola (F12) y revisamos el detalle si se repite.');
+      doc.line(120, y, 190, y);
+      doc.text('Fecha', 120, y + 5);
     }
+
+    doc.save('recepcion_pedidos.pdf');
+
+    // En modo Envío, marcar enviados (no bloquea el PDF)
+    if (isEnvio) {
+      try {
+        const ids = rows.map(r=>r.id).filter(Boolean);
+        if (ids.length) {
+          const payload = { action: 'markSent', ids, envioId: `ENV-${new Date().toISOString().slice(0,10)}` };
+          fetch(APPS_SCRIPT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type':'text/plain;charset=utf-8' },
+            body: JSON.stringify(payload)
+          });
+        }
+      } catch (e) {
+        alert('PDF generado, pero no se pudo marcar como ENVIADO en Sheets.');
+      }
+    }
+
+    rows = [];
+    paint();
+
+  }catch(err){
+    console.error('[toPDF]', err);
+    alert('Ocurrió un error al generar el PDF.\nAbre la consola (F12) y revisamos el detalle si se repite.');
   }
+}
 
   // ===== Listeners =====
   els.btnSave.onclick=save;
