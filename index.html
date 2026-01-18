@@ -396,7 +396,20 @@ async function savePedidoToSheet(data){
         const t = val.trim();
 
         // ISO: 2026-01-17...
-        if(/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0,10);
+        if(/^\d{4}-\d{2}-\d{2}/.test(t)) {
+  // Si viene con hora (ISO), convertir a fecha LOCAL antes de cortar
+  if (t.includes('T')) {
+    const d = new Date(t);
+    if (!isNaN(d)) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+  }
+  // Si ya viene solo como yyyy-mm-dd
+  return t.slice(0, 10);
+}
 
         // dd/mm/yyyy ...
         const m = t.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
